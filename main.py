@@ -25,7 +25,7 @@ class AntiSpamBot(commands.Bot):
         intents.guild_messages = True
         
         super().__init__(
-            command_prefix='!',
+            command_prefix='?',
             intents=intents,
             help_command=None
         )
@@ -262,11 +262,11 @@ async def main():
             embed.add_field(
                 name="Commands", 
                 value=(
-                    "`!antispam config` - View current config\n"
-                    "`!antispam enable/disable` - Toggle bot\n"
-                    "`!antispam logchannel` - Set logging channel\n"
-                    "`!antispam whitelist <user>` - Add user to whitelist\n"
-                    "`!antispam stats` - View detection statistics"
+                    "`?antispam config` - View current config\n"
+                    "`?antispam enable/disable` - Toggle bot\n"
+                    "`?antispam logchannel` - Set logging channel\n"
+                    "`?antispam whitelist <user>` - Add user to whitelist\n"
+                    "`?antispam stats` - View detection statistics"
                 ), 
                 inline=False
             )

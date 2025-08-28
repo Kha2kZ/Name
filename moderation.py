@@ -155,6 +155,43 @@ class ModerationTools:
             logger.error(f"Failed to quarantine {member}: {e}")
             return False
     
+    async def remove_quarantine(self, member: discord.Member) -> bool:
+        """Remove quarantine from a member and restore their roles"""
+        try:
+            guild_id = str(member.guild.id)
+            
+            # Find quarantine role
+            quarantine_role = discord.utils.get(member.guild.roles, name="Quarantined")
+            if not quarantine_role:
+                logger.warning(f"No quarantine role found in {member.guild.name}")
+                return True  # Consider it successful if no quarantine role exists
+            
+            # Remove quarantine role
+            if quarantine_role in member.roles:
+                await member.remove_roles(quarantine_role, reason="Verification completed")
+                logger.info(f"Removed quarantine from {member} in {member.guild.name}")
+                
+                # Log the action
+                await self._log_moderation_action(
+                    member.guild,
+                    "Unquarantine",
+                    member,
+                    "Verification completed successfully",
+                    self.bot.user
+                )
+                
+                return True
+            else:
+                logger.info(f"{member} was not quarantined")
+                return True
+                
+        except discord.Forbidden:
+            logger.error(f"No permission to remove quarantine from {member}")
+            return False
+        except discord.HTTPException as e:
+            logger.error(f"Failed to remove quarantine from {member}: {e}")
+            return False
+    
     async def _get_or_create_quarantine_role(self, guild: discord.Guild) -> Optional[discord.Role]:
         """Get or create quarantine role"""
         # Look for existing quarantine role
@@ -278,6 +315,7 @@ class ModerationTools:
             "Kick": discord.Color.orange(),
             "Ban": discord.Color.red(),
             "Timeout": discord.Color.yellow(),
-            "Quarantine": discord.Color.purple()
+            "Quarantine": discord.Color.purple(),
+            "Unquarantine": discord.Color.green()
         }
         return colors.get(action, discord.Color.greyple())

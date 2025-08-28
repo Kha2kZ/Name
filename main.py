@@ -4,6 +4,8 @@ import asyncio
 import json
 import os
 import logging
+import random
+import string
 from datetime import datetime, timedelta
 
 from config import ConfigManager
@@ -38,6 +40,9 @@ class AntiSpamBot(commands.Bot):
         
         # Track member joins for raid detection
         self.recent_joins = {}
+        
+        # Track pending verifications
+        self.pending_verifications = {}
         
     async def setup_hook(self):
         """Called when the bot is starting up"""
@@ -85,9 +90,14 @@ class AntiSpamBot(commands.Bot):
             await self._start_verification(member)
             
     async def on_message(self, message):
-        """Handle message events for spam detection"""
+        """Handle message events for spam detection and verification"""
         if message.author.bot:
             await self.process_commands(message)
+            return
+        
+        # Handle DM verification responses
+        if isinstance(message.channel, discord.DMChannel):
+            await self._handle_verification_response(message)
             return
             
         guild_id = str(message.guild.id) if message.guild else None
@@ -172,23 +182,61 @@ class AntiSpamBot(commands.Bot):
         )
         
     async def _start_verification(self, member):
-        """Start verification process for new member"""
+        """Start captcha verification process for new member"""
         try:
+            # Generate simple math captcha
+            num1 = random.randint(1, 10)
+            num2 = random.randint(1, 10)
+            answer = num1 + num2
+            
+            # Store the verification data
+            verification_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            self.pending_verifications[member.id] = {
+                'answer': answer,
+                'verification_id': verification_id,
+                'attempts': 0,
+                'timestamp': datetime.utcnow()
+            }
+            
             embed = discord.Embed(
-                title="Welcome! Please verify your account",
-                description="To gain access to the server, please react with ✅ below.",
-                color=discord.Color.blue()
+                title="🔐 Account Verification Required",
+                description=f"Welcome to **{member.guild.name}**!\n\n🤖 To verify you're human and gain access to the server, please solve this simple math problem:",
+                color=0x5865f2
             )
+            embed.add_field(
+                name="📊 Math Challenge", 
+                value=f"**What is {num1} + {num2}?**\n\nReply with just the number (e.g., `{answer}`)", 
+                inline=False
+            )
+            embed.add_field(
+                name="⏰ Time Limit", 
+                value="You have 5 minutes to complete verification", 
+                inline=True
+            )
+            embed.add_field(
+                name="🆔 Verification ID", 
+                value=f"`{verification_id}`", 
+                inline=True
+            )
+            embed.set_footer(text="AntiBot Protection • Reply with the answer to this DM")
             
             # Send DM to member
             dm_channel = await member.create_dm()
-            message = await dm_channel.send(embed=embed)
-            await message.add_reaction("✅")
+            await dm_channel.send(embed=embed)
             
-            logger.info(f"Verification started for {member}")
+            # Apply quarantine role temporarily
+            await self.moderation.quarantine_member(member)
+            
+            logger.info(f"Captcha verification started for {member} - Answer: {answer}")
+            
+            # Set timeout to remove verification after 5 minutes
+            asyncio.create_task(self._verification_timeout(member.id, dm_channel, member))
             
         except discord.Forbidden:
             logger.warning(f"Could not send verification DM to {member}")
+            # If can't DM, don't quarantine - might be a legitimate user with DMs disabled
+        except Exception as e:
+            logger.error(f"Error starting verification for {member}: {e}")
             
     async def _handle_spam_message(self, message):
         """Handle detected spam message"""
@@ -216,6 +264,113 @@ class AntiSpamBot(commands.Bot):
             "Spam Detection",
             f"Spam from {message.author} - Action: {action}"
         )
+    
+    async def _handle_verification_response(self, message):
+        """Handle verification responses in DMs"""
+        user_id = message.author.id
+        
+        if user_id not in self.pending_verifications:
+            return
+        
+        verification_data = self.pending_verifications[user_id]
+        
+        try:
+            user_answer = int(message.content.strip())
+            correct_answer = verification_data['answer']
+            
+            if user_answer == correct_answer:
+                # Correct answer - verify the user
+                del self.pending_verifications[user_id]
+                
+                # Find the member in all guilds
+                member = None
+                for guild in self.guilds:
+                    member = guild.get_member(user_id)
+                    if member:
+                        break
+                
+                if member:
+                    # Remove quarantine
+                    await self.moderation.remove_quarantine(member)
+                    
+                    success_embed = discord.Embed(
+                        title="✅ Verification Successful!",
+                        description=f"Welcome to **{member.guild.name}**!\n\n🎉 You now have full access to the server.",
+                        color=0x00ff88
+                    )
+                    success_embed.set_footer(text="Thank you for keeping our server safe!")
+                    await message.channel.send(embed=success_embed)
+                    
+                    # Log successful verification
+                    await self._log_action(
+                        member.guild,
+                        "Verification",
+                        f"✅ {member} successfully completed captcha verification"
+                    )
+                    
+                    logger.info(f"User {member} successfully verified")
+            else:
+                # Wrong answer
+                verification_data['attempts'] += 1
+                
+                if verification_data['attempts'] >= 3:
+                    # Too many failed attempts
+                    del self.pending_verifications[user_id]
+                    
+                    fail_embed = discord.Embed(
+                        title="❌ Verification Failed",
+                        description="Too many incorrect attempts. You will be removed from the server.\n\nIf you believe this is an error, please contact server administrators.",
+                        color=0xff4444
+                    )
+                    await message.channel.send(embed=fail_embed)
+                    
+                    # Find and kick the member
+                    for guild in self.guilds:
+                        member = guild.get_member(user_id)
+                        if member:
+                            await self.moderation.kick_member(member, "Failed captcha verification (3 attempts)")
+                            await self._log_action(
+                                guild,
+                                "Verification",
+                                f"❌ {member} failed captcha verification (3 attempts)"
+                            )
+                            break
+                else:
+                    # Give another chance
+                    attempts_left = 3 - verification_data['attempts']
+                    retry_embed = discord.Embed(
+                        title="❌ Incorrect Answer",
+                        description=f"That's not correct. You have **{attempts_left}** attempts remaining.\n\nPlease try again with just the number.",
+                        color=0xffa500
+                    )
+                    await message.channel.send(embed=retry_embed)
+                    
+        except ValueError:
+            # Not a number
+            error_embed = discord.Embed(
+                title="⚠️ Invalid Response",
+                description="Please respond with just the number (e.g., `15`).\n\nDon't include any other text.",
+                color=0xffa500
+            )
+            await message.channel.send(embed=error_embed)
+        except Exception as e:
+            logger.error(f"Error handling verification response: {e}")
+    
+    async def _verification_timeout(self, user_id: int, dm_channel, member: discord.Member):
+        """Handle verification timeout after 5 minutes"""
+        await asyncio.sleep(300)  # 5 minutes
+        if user_id in self.pending_verifications:
+            del self.pending_verifications[user_id]
+            try:
+                fail_embed = discord.Embed(
+                    title="⏰ Verification Timeout",
+                    description="Your verification has expired. Please rejoin the server to try again.",
+                    color=0xff4444
+                )
+                await dm_channel.send(embed=fail_embed)
+                await self.moderation.kick_member(member, "Failed to complete verification within time limit")
+            except Exception as e:
+                logger.error(f"Error handling verification timeout: {e}")
         
     async def _log_action(self, guild, action_type, description):
         """Log moderation actions"""
@@ -235,12 +390,14 @@ class AntiSpamBot(commands.Bot):
                 action_colors = {
                     "Bot Detection": 0xff6b6b,
                     "Spam Detection": 0xffa726,
-                    "Raid Protection": 0xff5722
+                    "Raid Protection": 0xff5722,
+                    "Verification": 0x5865f2
                 }
                 action_icons = {
                     "Bot Detection": "🤖",
                     "Spam Detection": "🚫",
-                    "Raid Protection": "⚡"
+                    "Raid Protection": "⚡",
+                    "Verification": "🔐"
                 }
                 
                 embed = discord.Embed(
@@ -250,6 +407,11 @@ class AntiSpamBot(commands.Bot):
                     timestamp=datetime.utcnow()
                 )
                 embed.set_footer(text="AntiBot Protection System", icon_url=guild.me.display_avatar.url if guild.me else None)
+                
+                # Add verification to action colors/icons
+                if action_type == "Verification":
+                    embed.color = 0x00ff88 if "✅" in description else 0xff4444
+                    embed.title = f"🔐 {action_type}"
                 
                 await log_channel.send(embed=embed)
         except Exception as e:
@@ -380,6 +542,63 @@ async def main():
             await ctx.send(embed=embed)
         else:
             await ctx.send("❌ Failed to add user to whitelist")
+    
+    @antispam.command(name='verification')
+    async def toggle_verification(ctx, enabled: bool = None):
+        """Enable or disable captcha verification for new members"""
+        config = bot.config_manager.get_guild_config(str(ctx.guild.id))
+        
+        if enabled is None:
+            # Show current status
+            status = "🟢 ENABLED" if config['verification']['enabled'] else "🔴 DISABLED"
+            embed = discord.Embed(
+                title="🔐 Captcha Verification Status",
+                description=f"**Current Status:** {status}\n\n📝 Use `?antispam verification true/false` to change",
+                color=0x5865f2
+            )
+            await ctx.send(embed=embed)
+        else:
+            # Change status
+            config['verification']['enabled'] = enabled
+            bot.config_manager.save_guild_config(str(ctx.guild.id), config)
+            
+            status_text = "ENABLED" if enabled else "DISABLED"
+            status_emoji = "🟢" if enabled else "🔴"
+            color = 0x00ff88 if enabled else 0xff4444
+            
+            description = (
+                f"🔐 **Captcha verification is now {status_text}**\n\n"
+                f"{'New members will need to solve a math problem to gain access.' if enabled else 'New members will have immediate access.'}"
+            )
+            
+            embed = discord.Embed(
+                title=f"{status_emoji} Verification {status_text}",
+                description=description,
+                color=color
+            )
+            await ctx.send(embed=embed)
+    
+    @antispam.command(name='verify')
+    async def manual_verify(ctx, member: discord.Member):
+        """Manually send verification challenge to a member"""
+        if member.bot:
+            embed = discord.Embed(
+                title="⚠️ Cannot Verify Bot",
+                description="Bots cannot be verified through the captcha system.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Start verification for the member
+        await bot._start_verification(member)
+        
+        embed = discord.Embed(
+            title="📬 Verification Sent",
+            description=f"Captcha verification has been sent to **{member.display_name}**.\n\nThey have 5 minutes to complete it.",
+            color=0x5865f2
+        )
+        await ctx.send(embed=embed)
     
     @antispam.command(name='stats')
     async def show_stats(ctx):

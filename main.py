@@ -242,38 +242,33 @@ class AntiSpamBot(commands.Bot):
         
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
-                # Wait for either answer or timeout
                 game = self.active_games[guild_id]
-                timeout_occurred = False
                 
-                # Check for 30-second timeout on current question
-                if not game['question_answered']:
-                    time_elapsed = (datetime.utcnow() - game['question_start_time']).total_seconds()
-                    if time_elapsed >= 30:
-                        timeout_occurred = True
-                        
-                        # Show correct answer due to timeout
-                        embed = discord.Embed(
-                            title="⏰ Time's Up!",
-                            description="Nobody got it right in 30 seconds!",
-                            color=0xffa500
-                        )
-                        embed.add_field(
-                            name="✅ Correct Answer",
-                            value=f"**{game['current_question']['answer'].title()}**",
-                            inline=False
-                        )
-                        embed.set_footer(text="Better luck with the next question!")
-                        
-                        await game['channel'].send(embed=embed)
+                # Wait for either answer or timeout
+                start_wait = datetime.utcnow()
+                while (datetime.utcnow() - start_wait).total_seconds() < 30:
+                    if game['question_answered'] or not game['running']:
+                        break
+                    await asyncio.sleep(1)  # Check every second
                 
-                # Wait 5 seconds or until question is answered
-                if not game['question_answered'] and not timeout_occurred:
-                    await asyncio.sleep(5)
-                    continue
+                # If timeout occurred (30 seconds passed without answer)
+                if not game['question_answered'] and game['running']:
+                    embed = discord.Embed(
+                        title="⏰ Time's Up!",
+                        description="Nobody got it right in 30 seconds!",
+                        color=0xffa500
+                    )
+                    embed.add_field(
+                        name="✅ Correct Answer",
+                        value=f"**{game['current_question']['answer'].title()}**",
+                        inline=False
+                    )
+                    embed.set_footer(text="Better luck with the next question!")
+                    await game['channel'].send(embed=embed)
                 
-                # Reset for new question
-                await asyncio.sleep(3)  # Brief pause after answer/timeout
+                # Brief pause before next question
+                if game['running']:
+                    await asyncio.sleep(3)
                 
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
@@ -283,21 +278,26 @@ class AntiSpamBot(commands.Bot):
                 
                 # First, try new generated questions
                 if game['new_questions']:
-                    current_question = random.choice(game['new_questions'])
-                    game['new_questions'].remove(current_question)
+                    current_question = game['new_questions'].pop(0)  # Take first new question
+                    logger.info(f"Using new generated question: {current_question['question']}")
                 else:
                     # Use original questions, but avoid already shown ones
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
-                        # If all questions shown, reset and use all questions again
-                        available_questions = game['questions']
-                        game['shown_questions'] = set()
+                        # If all original questions shown, only use new generated ones
+                        logger.info("All original questions used, waiting for new generated questions")
+                        await asyncio.sleep(5)
+                        continue
                     
                     current_question = random.choice(available_questions)
+                    logger.info(f"Using original question: {current_question['question']}")
                 
-                # Track that this question was shown
+                # Track that this question was shown and remove from original pool
                 game['shown_questions'].add(current_question['question'])
+                if current_question in game['questions']:
+                    game['questions'].remove(current_question)
+                
                 game['current_question'] = current_question
                 game['question_number'] += 1
                 game['last_question_time'] = datetime.utcnow()

@@ -285,13 +285,18 @@ class AntiSpamBot(commands.Bot):
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
-                        # If all original questions shown, only use new generated ones
-                        logger.info("All original questions used, waiting for new generated questions")
-                        await asyncio.sleep(5)
-                        continue
-                    
-                    current_question = random.choice(available_questions)
-                    logger.info(f"Using original question: {current_question['question']}")
+                        # If no questions available, generate one immediately
+                        logger.info("No questions available, generating one immediately")
+                        import random
+                        # Quick generation of a simple question
+                        num1, num2 = random.randint(1, 100), random.randint(1, 100)
+                        current_question = {
+                            "question": f"What is {num1} + {num2}?",
+                            "answer": str(num1 + num2)
+                        }
+                    else:
+                        current_question = random.choice(available_questions)
+                        logger.info(f"Using original question: {current_question['question']}")
                 
                 # Track that this question was shown and remove from original pool
                 game['shown_questions'].add(current_question['question'])

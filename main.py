@@ -868,67 +868,81 @@ async def main():
     async def help_command(ctx):
         """Show all available commands"""
         embed = discord.Embed(
-            title="🤖 Master Security Bot Commands",
-            description="🛡️ **Complete command reference for server protection and fun**",
-            color=0x5865f2
+            title="🛡️ Master Security Bot",
+            description="**Your complete Discord protection and entertainment system**\n\n*Keeping your server safe while having fun!*",
+            color=0x7289da
+        )
+        embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1234567890.png")
+        embed.set_author(name="Command Center", icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
+        
+        embed.add_field(
+            name="🛡️ Security & Protection",
+            value=(
+                "```fix\n"
+                "?antispam          → Main protection hub\n"
+                "?antispam config   → View settings\n"
+                "?antispam stats    → Server analytics\n"
+                "?status            → System health\n"
+                "```"
+            ),
+            inline=True
         )
         
         embed.add_field(
-            name="🛡️ Anti-Bot Protection",
+            name="🔨 Moderation Arsenal",
             value=(
-                "`?antispam` - Main protection settings\n"
-                "`?antispam config` - View current settings\n"
-                "`?antispam enable/disable` - Toggle protection\n"
-                "`?antispam stats` - View server statistics\n"
-                "`?antispam verification` - Toggle captcha system\n"
-                "`?antispam whitelist <user>` - Trust a user"
+                "```diff\n"
+                "+ ?kick <user>      → Remove member\n"
+                "+ ?ban <user>       → Permanent ban\n"
+                "+ ?timeout <user>   → Temporary mute\n"
+                "+ ?quarantine <user> → Isolate threat\n"
+                "```"
             ),
-            inline=False
+            inline=True
         )
         
         embed.add_field(
-            name="🔨 Moderation Tools",
+            name="🎮 Entertainment Hub",
             value=(
-                "`?kick <member> [reason]` - Remove member from server\n"
-                "`?ban <member> [reason]` - Permanently ban member\n"
-                "`?timeout <member> [duration]` - Temporarily mute member\n"
-                "`?quarantine <member>` - Isolate suspicious member"
+                "```yaml\n"
+                "?games:       Start trivia challenge\n"
+                "?skip:        Skip question\n"
+                "?stop:        End game session\n"
+                "?leaderboard: View champions\n"
+                "```"
             ),
-            inline=False
+            inline=True
         )
         
         embed.add_field(
-            name="🎮 Fun & Games",
+            name="🔧 Utility Tools",
             value=(
-                "`?games` - Start a trivia game\n"
-                "`?skip` - Skip current trivia question\n"
-                "`?stop` - End current game session\n"
-                "`?leaderboard` - View top players"
+                "```css\n"
+                "?echo [message]  → Echo chamber\n"
+                "?help           → This menu\n"
+                "```"
             ),
-            inline=False
+            inline=True
         )
         
         embed.add_field(
-            name="🔧 Utility Commands",
-            value=(
-                "`?echo <message>` - Repeat your message\n"
-                "`?help` - Show this command list"
-            ),
+            name="\u200b",
+            value="**🌟 Pro Tips**\n> Use `?antispam` for detailed security settings\n> Try `?games` for interactive trivia fun!\n> Check `?status` for real-time bot health",
             inline=False
         )
-        
-        embed.set_footer(text="Use ?command for detailed help on specific commands")
+        embed.set_footer(text=f"Serving {len(bot.guilds)} servers • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         await ctx.send(embed=embed)
     
     @bot.command(name='status')
     async def status_command(ctx):
         """Show bot status and system information"""
         embed = discord.Embed(
-            title="🤖 Master Security Bot Status",
-            description="📊 **Current system status and information**",
-            color=0x5865f2,
+            title="📊 System Dashboard",
+            description="**🛡️ Master Security Bot • Real-time Status**\n\n*Monitoring and protecting your community 24/7*",
+            color=0x00d4aa,
             timestamp=datetime.utcnow()
         )
+        embed.set_thumbnail(url=bot.user.display_avatar.url if bot.user and bot.user.display_avatar else None)
         
         # Bot info
         embed.add_field(
@@ -961,11 +975,12 @@ async def main():
     async def echo_command(ctx, *, message):
         """Repeat the user's message"""
         embed = discord.Embed(
-            title="📢 Echo",
-            description=f"**{ctx.author.display_name} says:**\n{message}",
-            color=0x5865f2
+            title="📢 Echo Chamber",
+            description=f"**“{message}”**",
+            color=0x9966cc
         )
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
+        embed.set_author(name=f"{ctx.author.display_name} says...", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
+        embed.set_footer(text="✨ Message echoed successfully")
         await ctx.send(embed=embed)
     
     # Game Commands
@@ -1004,21 +1019,22 @@ async def main():
         }
         
         embed = discord.Embed(
-            title="🎮 Trivia Game Started!",
-            description="🧠 **Test your knowledge**\n\nAnswer questions to earn points!",
-            color=0x00ff88
+            title="🎮 Trivia Challenge Activated!",
+            description="**🧠 Knowledge Battle Arena**\n\n*Test your brain power and climb the leaderboard!*\n\n✨ **Ready to begin your intellectual journey?**",
+            color=0xff6b6b
         )
+        embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1234567890.png")
         embed.add_field(
-            name="📊 Question 1",
-            value=f"**{current_question['question']}**\n\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_question['options'])]),
+            name="🏆 Question 1 of 5",
+            value=f"**❓ {current_question['question']}**\n\n" + "\n".join([f"🔸 **{i+1}.** {opt}" for i, opt in enumerate(current_question['options'])]),
             inline=False
         )
         embed.add_field(
-            name="🎯 How to Play",
-            value="Type the number (1-4) or the full answer!\nFirst correct answer gets points!",
+            name="🎯 Game Rules",
+            value="**📝 Answer Format:** Type `1`, `2`, `3`, `4` or the full answer\n**⚡ Speed Bonus:** First correct answer wins!\n**🏆 Rewards:** 10 points per correct answer",
             inline=False
         )
-        embed.set_footer(text="Use ?skip to skip • ?stop to end game")
+        embed.set_footer(text="✨ Use ?skip to skip question • ?stop to end game • Good luck!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         
         await ctx.send(embed=embed)
     

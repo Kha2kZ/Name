@@ -75,8 +75,8 @@ class ModerationTools:
     async def timeout_member(self, member: discord.Member, duration: int, reason: str = "No reason provided") -> bool:
         """Timeout a member (duration in seconds)"""
         try:
-            # Convert duration to timedelta
-            timeout_until = datetime.utcnow() + timedelta(seconds=duration)
+            # Convert duration to timedelta  
+            timeout_until = discord.utils.utcnow() + timedelta(seconds=duration)
             
             await member.timeout(timeout_until, reason=reason)
             logger.info(f"Timed out {member} for {duration} seconds: {reason}")

@@ -399,6 +399,12 @@ class AntiSpamBot(commands.Bot):
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
+                        # Reset shown questions to start fresh cycle
+                        logger.info("Resetting question pool for fresh cycle")
+                        game['shown_questions'].clear()
+                        available_questions = game['questions']
+                    
+                    if not available_questions:
                         # If no questions available, generate one immediately
                         logger.info("No questions available, generating one immediately")
                         import random
@@ -581,17 +587,34 @@ class AntiSpamBot(commands.Bot):
                 
                 game = self.active_games[guild_id]
                 
-                # Choose random category and question
+                # Choose random category and question, avoid duplicates
                 category = random.choice(list(vietnam_questions.keys()))
-                question_data = random.choice(vietnam_questions[category])
-                question, answer, vietnamese_answer = question_data
                 
-                # Add to new questions pool
-                new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
-                game['new_questions'].append(new_question)
-                game['last_generation_time'] = datetime.utcnow()
+                # Get all questions that haven't been shown yet
+                available_new_questions = []
+                for cat_name, cat_questions in vietnam_questions.items():
+                    for q_data in cat_questions:
+                        question_text = q_data[0]
+                        if question_text not in game['shown_questions']:
+                            available_new_questions.append(q_data)
                 
-                logger.info(f"Generated new QNA question ({category}): {question}")
+                # If we have new questions available, use one
+                if available_new_questions:
+                    question_data = random.choice(available_new_questions)
+                    question, answer, vietnamese_answer = question_data
+                    
+                    # Add to new questions pool and mark as shown
+                    new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
+                    game['new_questions'].append(new_question)
+                    game['shown_questions'].add(question)
+                    game['last_generation_time'] = datetime.utcnow()
+                    
+                    logger.info(f"Generated new QNA question ({category}): {question}")
+                else:
+                    # All questions used, reset the shown questions to start over
+                    logger.info("All questions used, resetting pool")
+                    game['shown_questions'].clear()
+                    # Don't generate this cycle, let the next cycle pick fresh questions
                 
             except Exception as e:
                 logger.error(f"Error in QNA generation loop: {e}")

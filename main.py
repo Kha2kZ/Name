@@ -1281,58 +1281,69 @@ async def main():
             name="🛡️ Security & Protection",
             value=(
                 "```fix\n"
-                "?antispam          → Main protection hub\n"
-                "?antispam config   → View settings\n"
-                "?antispam stats    → Server analytics\n"
-                "?status            → System health\n"
+                "?antispam               → Main protection hub\n"
+                "?antispam config        → View current settings\n"
+                "?antispam enable/disable → Toggle protection\n"
+                "?antispam logchannel    → Set logging channel\n"
+                "?antispam whitelist     → Trust a user\n"
+                "?antispam verification  → Toggle verification\n"
+                "?antispam verify        → Send verification\n"
+                "?antispam stats         → Server analytics\n"
+                "?status                 → System health\n"
                 "```"
             ),
-            inline=True
+            inline=False
         )
         
         embed.add_field(
             name="🔨 Moderation Arsenal",
             value=(
                 "```diff\n"
-                "+ ?kick <user>      → Remove member\n"
-                "+ ?ban <user>       → Permanent ban\n"
-                "+ ?timeout <user>   → Temporary mute\n"
-                "+ ?quarantine <user> → Isolate threat\n"
+                "+ ?kick <user> [reason]      → Remove member\n"
+                "+ ?ban <user> [reason]       → Permanent ban\n"
+                "+ ?timeout <user> [duration] → Temporary mute\n"
+                "+ ?quarantine <user>         → Isolate threat\n"
                 "```"
             ),
-            inline=True
+            inline=False
         )
         
         embed.add_field(
-            name="🎮 Entertainment Hub",
+            name="🎮 Q&A Game System",
             value=(
                 "```yaml\n"
-                "?games:       Start trivia challenge\n"
-                "?skip:        Skip question\n"
-                "?stop:        End game session\n"
-                "?leaderboard: View champions\n"
+                "?qna              → Start Q&A trivia game\n"
+                "?skip             → Skip current question\n"
+                "?stop             → End game session\n"
+                "?leaderboard      → View top players\n"
+                "?reset_questions  → Reset question history (Admin)\n"
                 "```"
             ),
-            inline=True
+            inline=False
         )
         
         embed.add_field(
             name="🔧 Utility Tools",
             value=(
                 "```css\n"
-                "?echo [message]  → Echo chamber\n"
-                "?help           → This menu\n"
+                "?echo [message]   → Repeat your message\n"
+                "?help             → Show this command list\n"
                 "```"
             ),
-            inline=True
+            inline=False
         )
         
         embed.add_field(
-            name="\u200b",
-            value="**🌟 Pro Tips**\n> Use `?antispam` for detailed security settings\n> Try `?games` for interactive trivia fun!\n> Check `?status` for real-time bot health",
+            name="📋 Usage Notes",
+            value=(
+                "**🔐 Admin Commands:** Most security and moderation commands require admin permissions\n"
+                "**⚡ Quick Access:** Use `?antispam` for detailed protection settings\n"
+                "**🎯 Games:** Start with `?qna` for Vietnamese trivia challenges!\n"
+                "**📊 Status:** Check `?status` for real-time bot health and server stats"
+            ),
             inline=False
         )
-        embed.set_footer(text=f"Serving {len(bot.guilds)} servers • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
+        embed.set_footer(text=f"Serving {len(bot.guilds)} servers • All commands use ? prefix • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         await ctx.send(embed=embed)
     
     @bot.command(name='status')

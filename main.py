@@ -7,12 +7,14 @@ import logging
 import random
 import string
 from datetime import datetime, timedelta
+from typing import Optional
 
 from config import ConfigManager
 from bot_detection import BotDetector
 from spam_detection import SpamDetector
 from moderation import ModerationTools
 from logging_setup import setup_logging
+from monitor import BotMonitor
 
 # Setup logging
 setup_logging()
@@ -37,6 +39,7 @@ class AntiSpamBot(commands.Bot):
         self.bot_detector = BotDetector(self.config_manager)
         self.spam_detector = SpamDetector(self.config_manager)
         self.moderation = ModerationTools(self)
+        self.monitor = BotMonitor(self)
         
         # Track member joins for raid detection
         self.recent_joins = {}
@@ -47,6 +50,8 @@ class AntiSpamBot(commands.Bot):
     async def setup_hook(self):
         """Called when the bot is starting up"""
         logger.info("Bot is starting up...")
+        # Start monitoring
+        self.monitor.start_monitoring()
         
     async def on_ready(self):
         """Called when the bot is ready"""
@@ -80,6 +85,9 @@ class AntiSpamBot(commands.Bot):
         
         # Check for raid protection
         await self._check_raid_protection(member)
+        
+        # Record member join event
+        self.monitor.record_member_event('join', guild_id, str(member.id))
         
         # Run bot detection
         is_suspicious = await self.bot_detector.analyze_member(member)
@@ -119,6 +127,12 @@ class AntiSpamBot(commands.Bot):
             
         await self.process_commands(message)
         
+    async def on_member_remove(self, member):
+        """Handle member leaving the server"""
+        guild_id = str(member.guild.id)
+        self.monitor.record_member_event('leave', guild_id, str(member.id))
+        logger.info(f"Member left {member.guild.name}: {member} ({member.id})")
+        
     async def _check_raid_protection(self, member):
         """Check for mass join attacks"""
         guild_id = str(member.guild.id)
@@ -143,6 +157,8 @@ class AntiSpamBot(commands.Bot):
         
         # Check if threshold exceeded
         if len(self.recent_joins[guild_id]) >= config['raid_protection']['max_joins']:
+            # Record raid detection
+            self.monitor.record_detection('raid', guild_id, {'joins_count': len(self.recent_joins[guild_id])})
             await self._handle_raid_detected(member.guild)
             
     async def _handle_raid_detected(self, guild):
@@ -168,12 +184,18 @@ class AntiSpamBot(commands.Bot):
         
         logger.warning(f"Suspicious member detected: {member} in {member.guild.name}")
         
+        # Record detection event
+        self.monitor.record_detection('bot', guild_id, {'member_id': str(member.id), 'member_name': str(member)})
+        
         if action == 'kick':
             await self.moderation.kick_member(member, "Suspicious bot-like behavior")
+            self.monitor.record_action('kick', guild_id, str(member), "Suspicious bot-like behavior")
         elif action == 'ban':
             await self.moderation.ban_member(member, "Suspicious bot-like behavior")
+            self.monitor.record_action('ban', guild_id, str(member), "Suspicious bot-like behavior")
         elif action == 'quarantine':
             await self.moderation.quarantine_member(member)
+            self.monitor.record_action('quarantine', guild_id, str(member), "Suspicious bot-like behavior")
             
         await self._log_action(
             member.guild,
@@ -242,6 +264,9 @@ class AntiSpamBot(commands.Bot):
         """Handle detected spam message"""
         logger.warning(f"Spam detected from {message.author} in {message.guild.name}")
         
+        # Record spam detection
+        self.monitor.record_detection('spam', str(message.guild.id), {'user_id': str(message.author.id), 'content': message.content[:100]})
+        
         # Delete the message
         try:
             await message.delete()
@@ -254,10 +279,13 @@ class AntiSpamBot(commands.Bot):
         
         if action == 'timeout':
             await self.moderation.timeout_member(message.author, duration=300)  # 5 minutes
+            self.monitor.record_action('timeout', str(message.guild.id), str(message.author), "Spamming")
         elif action == 'kick':
             await self.moderation.kick_member(message.author, "Spamming")
+            self.monitor.record_action('kick', str(message.guild.id), str(message.author), "Spamming")
         elif action == 'ban':
             await self.moderation.ban_member(message.author, "Spamming")
+            self.monitor.record_action('ban', str(message.guild.id), str(message.author), "Spamming")
             
         await self._log_action(
             message.guild,
@@ -308,6 +336,8 @@ class AntiSpamBot(commands.Bot):
                         f"✅ {member} successfully completed captcha verification"
                     )
                     
+                    # Record successful verification
+                    self.monitor.record_verification(str(member.guild.id), True, str(member.id))
                     logger.info(f"User {member} successfully verified")
             else:
                 # Wrong answer
@@ -329,6 +359,8 @@ class AntiSpamBot(commands.Bot):
                         member = guild.get_member(user_id)
                         if member:
                             await self.moderation.kick_member(member, "Failed captcha verification (3 attempts)")
+                            # Record failed verification
+                            self.monitor.record_verification(str(guild.id), False, str(member.id))
                             await self._log_action(
                                 guild,
                                 "Verification",
@@ -512,7 +544,7 @@ async def main():
         await ctx.send(embed=embed)
     
     @antispam.command(name='logchannel')
-    async def set_log_channel(ctx, channel: discord.TextChannel = None):
+    async def set_log_channel(ctx, channel: Optional[discord.TextChannel] = None):
         """Set the logging channel"""
         if channel is None:
             channel = ctx.channel
@@ -544,7 +576,7 @@ async def main():
             await ctx.send("❌ Failed to add user to whitelist")
     
     @antispam.command(name='verification')
-    async def toggle_verification(ctx, enabled: bool = None):
+    async def toggle_verification(ctx, enabled: Optional[bool] = None):
         """Enable or disable captcha verification for new members"""
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
         
@@ -603,22 +635,9 @@ async def main():
     @antispam.command(name='stats')
     async def show_stats(ctx):
         """Show detection statistics"""
-        embed = discord.Embed(
-            title="📈 Server Protection Analytics",
-            description=f"📊 **Real-time statistics for {ctx.guild.name}**",
-            color=0x5865f2,
-            timestamp=datetime.utcnow()
-        )
-        embed.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
-        
-        embed.add_field(name="🛡️ Protection Status", value="🟢 **ACTIVE & MONITORING**", inline=True)
-        embed.add_field(name="🏛️ Server", value=f"**{ctx.guild.name}**", inline=True)
-        embed.add_field(name="👥 Total Members", value=f"**{ctx.guild.member_count:,}**", inline=True)
-        embed.add_field(name="🤖 Bots Detected", value="**0** *(last 24h)*", inline=True)
-        embed.add_field(name="🚫 Spam Blocked", value="**0** *(last 24h)*", inline=True)
-        embed.add_field(name="⚡ Raids Stopped", value="**0** *(last 24h)*", inline=True)
+        # Use monitor to generate stats embed
+        embed = await bot.monitor.generate_stats_embed(str(ctx.guild.id))
         embed.set_footer(text=f"AntiBot Protection • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
-        
         await ctx.send(embed=embed)
     
     # Basic moderation commands

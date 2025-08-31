@@ -74,7 +74,9 @@ class AntiSpamBot(commands.Bot):
                 ],
                 max_tokens=200
             )
-            return response.choices[0].message.content.strip()
+            if response.choices and response.choices[0].message and response.choices[0].message.content:
+                return response.choices[0].message.content.strip()
+            return text
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return text  # Return original text if translation fails
@@ -96,7 +98,9 @@ class AntiSpamBot(commands.Bot):
                 ],
                 max_tokens=200
             )
-            return response.choices[0].message.content.strip().lower()
+            if response.choices and response.choices[0].message and response.choices[0].message.content:
+                return response.choices[0].message.content.strip().lower()
+            return vietnamese_text.lower()
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return vietnamese_text.lower()  # Return original text if translation fails
@@ -250,8 +254,8 @@ class AntiSpamBot(commands.Bot):
         
         if not players:
             embed = discord.Embed(
-                title="🎮 Game Ended",
-                description="Game finished with no players!",
+                title="🎮 Trò chơi kết thúc",
+                description="Trò chơi kết thúc không có người chơi!",
                 color=0xff4444
             )
             await message.channel.send(embed=embed)
@@ -269,8 +273,8 @@ class AntiSpamBot(commands.Bot):
             sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
             
             embed = discord.Embed(
-                title="🎮 Game Finished!",
-                description="🏁 **Final Results**",
+                title="🎮 Trò chơi hoàn thành!",
+                description="🏁 **Kết quả cuối cùng**",
                 color=0x00ff88
             )
             
@@ -280,13 +284,13 @@ class AntiSpamBot(commands.Bot):
                     rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
                     embed.add_field(
                         name=f"{rank_emoji} {user.display_name}",
-                        value=f"🎯 {score} points",
+                        value=f"🎯 {score} điểm",
                         inline=True
                     )
                 except:
                     continue
             
-            embed.set_footer(text="Great game everyone! Use ?leaderboard to see all-time scores")
+            embed.set_footer(text="Trò chơi tuyệt vời! Dùng ?leaderboard để xem điểm tổng")
             await message.channel.send(embed=embed)
         
         # Clean up game data
@@ -310,16 +314,16 @@ class AntiSpamBot(commands.Bot):
                 # If timeout occurred (30 seconds passed without answer)
                 if not game['question_answered'] and game['running']:
                     embed = discord.Embed(
-                        title="⏰ Time's Up!",
-                        description="Nobody got it right in 30 seconds!",
+                        title="⏰ Hết giờ!",
+                        description="Không ai trả lời đúng trong 30 giây!",
                         color=0xffa500
                     )
                     embed.add_field(
-                        name="✅ Correct Answer",
-                        value=f"**{game['current_question']['answer'].title()}**",
+                        name="✅ Đáp án đúng",
+                        value=f"**{game['current_question'].get('vietnamese_answer', game['current_question']['answer']).title()}**",
                         inline=False
                     )
-                    embed.set_footer(text="Better luck with the next question!")
+                    embed.set_footer(text="Chúc may mắn lần sau!")
                     await game['channel'].send(embed=embed)
                 
                 # Brief pause before next question
@@ -344,12 +348,12 @@ class AntiSpamBot(commands.Bot):
                         # If no questions available, generate one immediately
                         logger.info("No questions available, generating one immediately")
                         import random
-                        # Quick generation of Vietnam-focused math question
+                        # Quick generation of Vietnam-focused math question in Vietnamese
                         vietnam_math_questions = [
-                            ("If Hanoi has 8 million people and Ho Chi Minh City has 9 million, what's the total?", "17 million"),
-                            ("Vietnam has 63 provinces. If 5 are municipalities, how many regular provinces?", "58"),
-                            ("If pho costs 50,000 VND and you buy 3 bowls, how much total?", "150000"),
-                            ("If banh mi costs 25,000 VND and coffee costs 15,000 VND, what's the total?", "40000")
+                            ("Nếu Hà Nội có 8 triệu dân và TP.HCM có 9 triệu dân, tổng là bao nhiêu?", "17 triệu"),
+                            ("Việt Nam có 63 tỉnh thành. Nếu 5 là thành phố trực thuộc TW, còn lại bao nhiêu tỉnh?", "58"),
+                            ("Nếu tô phở giá 50.000 VNĐ và mua 3 tô, tổng tiền là bao nhiêu?", "150000"),
+                            ("Nếu bánh mì 25.000 VNĐ và cà phê 15.000 VNĐ, tổng cộng là bao nhiêu?", "40000")
                         ]
                         question_data = random.choice(vietnam_math_questions)
                         current_question = {
@@ -372,16 +376,16 @@ class AntiSpamBot(commands.Bot):
                 game['question_start_time'] = datetime.utcnow()
                 
                 embed = discord.Embed(
-                    title="🤔 Next Question",
-                    description=f"**Question #{game['question_number']}**",
+                    title="🤔 Câu hỏi tiếp theo",
+                    description=f"**Câu hỏi #{game['question_number']}**",
                     color=0x5865f2
                 )
                 embed.add_field(
-                    name="❓ Question",
+                    name="❓ Câu hỏi",
                     value=f"**{current_question['question']}**",
                     inline=False
                 )
-                embed.set_footer(text="Answer directly in chat • Use ?stop to end • ?skip if stuck")
+                embed.set_footer(text="Trả lời trực tiếp trong chat • Dùng ?stop để kết thúc • ?skip nếu bí")
                 
                 await game['channel'].send(embed=embed)
                 
@@ -504,10 +508,10 @@ class AntiSpamBot(commands.Bot):
                 # Choose random category and question
                 category = random.choice(list(vietnam_questions.keys()))
                 question_data = random.choice(vietnam_questions[category])
-                question, answer = question_data
+                question, answer, vietnamese_answer = question_data
                 
                 # Add to new questions pool
-                new_question = {"question": question, "answer": answer.lower()}
+                new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
                 game['new_questions'].append(new_question)
                 game['last_generation_time'] = datetime.utcnow()
                 
@@ -934,13 +938,13 @@ async def main():
             channel = ctx.channel
             
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
-        config['logging']['channel_id'] = str(channel.id)
+        config['logging']['channel_id'] = str(channel.id) if channel else None
         config['logging']['enabled'] = True
         bot.config_manager.save_guild_config(str(ctx.guild.id), config)
         
         embed = discord.Embed(
             title="📝 Logging Channel Updated",
-            description=f"📍 **Channel:** {channel.mention}\n\n🔍 All moderation actions will be logged here",
+            description=f"📍 **Channel:** {channel.mention if channel else 'None'}\n\n🔍 All moderation actions will be logged here",
             color=0x5865f2
         )
         await ctx.send(embed=embed)
@@ -1242,20 +1246,20 @@ async def main():
         
         if guild_id in bot.active_games:
             embed = discord.Embed(
-                title="🎮 QNA Already Active",
-                description="A QNA game is already running in this server!\n\nUse `?stop` to end it.",
+                title="🎮 QNA đã đang hoạt động",
+                description="Một trò chơi QNA đã đang chạy trong máy chủ này!\n\nSử dụng `?stop` để kết thúc.",
                 color=0xffa500
             )
             await ctx.send(embed=embed)
             return
         
-        # Start new QNA game with Vietnam-focused questions
+        # Start new QNA game with Vietnam-focused questions in Vietnamese
         questions = [
-            {"question": "What is the capital of Vietnam?", "answer": "hanoi"},
-            {"question": "What is the largest city in Vietnam?", "answer": "ho chi minh city"},
-            {"question": "What is Vietnam's national flower?", "answer": "lotus"},
-            {"question": "In what year did Vietnam gain independence?", "answer": "1945"},
-            {"question": "What is the currency of Vietnam?", "answer": "dong"}
+            {"question": "Thủ đô của Việt Nam là gì?", "answer": "hanoi", "vietnamese_answer": "Hà Nội"},
+            {"question": "Thành phố lớn nhất Việt Nam là gì?", "answer": "ho chi minh city", "vietnamese_answer": "TP. Hồ Chí Minh"},
+            {"question": "Quốc hoa của Việt Nam là gì?", "answer": "lotus", "vietnamese_answer": "Hoa sen"},
+            {"question": "Việt Nam giành độc lập vào năm nào?", "answer": "1945", "vietnamese_answer": "1945"},
+            {"question": "Đồng tiền của Việt Nam là gì?", "answer": "dong", "vietnamese_answer": "Đồng Việt Nam"}
         ]
         
         import random
@@ -1278,21 +1282,21 @@ async def main():
         }
         
         embed = discord.Embed(
-            title="🤔 QNA Challenge Activated!",
-            description="**🧠 Question & Answer Arena**\n\n*Test your knowledge with continuous questions!*\n\n✨ **Ready to begin your QNA session?**",
+            title="🤔 Thử thách QNA đã kích hoạt!",
+            description="**🧠 Đấu trường Hỏi & Đáp**\n\n*Kiểm tra kiến thức của bạn với các câu hỏi liên tục!*\n\n✨ **Sẵn sàng bắt đầu phiên QNA?**",
             color=0xff6b6b
         )
         embed.add_field(
-            name="❓ Current Question",
+            name="❓ Câu hỏi hiện tại",
             value=f"**{current_question['question']}**",
             inline=False
         )
         embed.add_field(
-            name="🎯 Game Rules",
-            value="**📝 Answer Format:** Type your answer directly\n**⚡ Speed Bonus:** First correct answer wins!\n**🏆 Rewards:** 10 points per correct answer\n**⏱️ Questions:** New question every 5 seconds",
+            name="🎯 Luật chơi",
+            value="**📝 Định dạng trả lời:** Gõ câu trả lời trực tiếp\n**⚡ Thưởng tốc độ:** Câu trả lời đúng đầu tiên thắng!\n**🏆 Phần thưởng:** 10 điểm mỗi câu trả lời đúng\n**⏱️ Câu hỏi:** Câu hỏi mới mỗi 5 giây",
             inline=False
         )
-        embed.set_footer(text="✨ Use ?stop to end QNA session • ?skip if stuck • Answer continuously!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
+        embed.set_footer(text="✨ Dùng ?stop để kết thúc phiên QNA • ?skip nếu bí • Trả lời liên tục!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         
         await ctx.send(embed=embed)
         
@@ -1307,8 +1311,8 @@ async def main():
         
         if guild_id not in bot.active_games:
             embed = discord.Embed(
-                title="❌ No Active QNA",
-                description="No QNA game is currently running.",
+                title="❌ Không có trò chơi QNA",
+                description="Hiện tại không có trò chơi QNA nào đang chạy.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -1359,8 +1363,8 @@ async def main():
         
         if guild_id not in bot.leaderboard or not bot.leaderboard[guild_id]:
             embed = discord.Embed(
-                title="📈 QNA Leaderboard",
-                description="No scores recorded yet!\n\nPlay some QNA games with `?qna` to get on the leaderboard!",
+                title="📈 Bảng xếp hạng QNA",
+                description="Chưa có điểm nào được ghi nhận!\n\nChơi vài trò QNA với `?qna` để lên bảng xếp hạng!",
                 color=0x5865f2
             )
             await ctx.send(embed=embed)
@@ -1370,8 +1374,8 @@ async def main():
         sorted_players = sorted(bot.leaderboard[guild_id].items(), key=lambda x: x[1], reverse=True)
         
         embed = discord.Embed(
-            title="🏆 QNA Leaderboard",
-            description="🧠 **Top QNA players in this server**",
+            title="🏆 Bảng xếp hạng QNA",
+            description="🧠 **Các người chơi QNA hàng đầu trong máy chủ**",
             color=0xffd700
         )
         
@@ -1381,13 +1385,13 @@ async def main():
                 rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
                 embed.add_field(
                     name=f"{rank_emoji} {user.display_name}",
-                    value=f"🎯 **{score} points**",
+                    value=f"🎯 **{score} điểm**",
                     inline=True
                 )
             except:
                 continue
         
-        embed.set_footer(text="Play ?qna to climb the leaderboard!")
+        embed.set_footer(text="Chơi ?qna để leo lên bảng xếp hạng!")
         await ctx.send(embed=embed)
     
     async def _end_game(ctx, guild_id):
@@ -1400,8 +1404,8 @@ async def main():
         
         if not players:
             embed = discord.Embed(
-                title="🎮 QNA Ended",
-                description="QNA session finished with no players!",
+                title="🎮 QNA kết thúc",
+                description="Phiên QNA kết thúc không có người chơi!",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -1419,8 +1423,8 @@ async def main():
             sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
             
             embed = discord.Embed(
-                title="🎮 QNA Session Finished!",
-                description="🏁 **Final Results**",
+                title="🎮 Phiên QNA hoàn thành!",
+                description="🏁 **Kết quả cuối cùng**",
                 color=0x00ff88
             )
             
@@ -1430,13 +1434,13 @@ async def main():
                     rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
                     embed.add_field(
                         name=f"{rank_emoji} {user.display_name}",
-                        value=f"🎯 {score} points",
+                        value=f"🎯 {score} điểm",
                         inline=True
                     )
                 except:
                     continue
             
-            embed.set_footer(text="Great session everyone! Use ?leaderboard to see all-time scores")
+            embed.set_footer(text="Phiên tuyệt vời mọi người! Dùng ?leaderboard để xem điểm tổng")
             await ctx.send(embed=embed)
         
         # Clean up game data

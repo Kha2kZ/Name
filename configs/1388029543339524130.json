@@ -32,7 +32,7 @@
     "action": "lockdown"
   },
   "verification": {
-    "enabled": false,
+    "enabled": true,
     "require_for_new_accounts": true,
     "new_account_threshold_days": 7,
     "verification_timeout_minutes": 10,

@@ -288,11 +288,17 @@ class AntiSpamBot(commands.Bot):
                         # If no questions available, generate one immediately
                         logger.info("No questions available, generating one immediately")
                         import random
-                        # Quick generation of a simple question
-                        num1, num2 = random.randint(1, 100), random.randint(1, 100)
+                        # Quick generation of Vietnam-focused math question
+                        vietnam_math_questions = [
+                            ("If Hanoi has 8 million people and Ho Chi Minh City has 9 million, what's the total?", "17 million"),
+                            ("Vietnam has 63 provinces. If 5 are municipalities, how many regular provinces?", "58"),
+                            ("If pho costs 50,000 VND and you buy 3 bowls, how much total?", "150000"),
+                            ("If banh mi costs 25,000 VND and coffee costs 15,000 VND, what's the total?", "40000")
+                        ]
+                        question_data = random.choice(vietnam_math_questions)
                         current_question = {
-                            "question": f"What is {num1} + {num2}?",
-                            "answer": str(num1 + num2)
+                            "question": question_data[0],
+                            "answer": question_data[1].lower()
                         }
                     else:
                         current_question = random.choice(available_questions)
@@ -328,30 +334,108 @@ class AntiSpamBot(commands.Bot):
                 break
     
     async def _qna_generation_loop(self, guild_id):
-        """Generate new questions every 30 seconds"""
+        """Generate new Vietnam-focused questions every 30 seconds"""
         import random
         
-        question_templates = [
-            ("What is the capital of {country}?", "geography"),
-            ("What is {num1} + {num2}?", "math"),
-            ("In what year was {event}?", "history"),
-            ("What does {acronym} stand for?", "technology"),
-            ("Who wrote {book}?", "literature"),
-            ("What is the largest {category}?", "general"),
-            ("How many {unit} are in a {larger_unit}?", "conversion")
-        ]
-        
-        geography_data = [
-            ("Japan", "tokyo"), ("Germany", "berlin"), ("Italy", "rome"), 
-            ("Spain", "madrid"), ("Canada", "ottawa"), ("Australia", "canberra"),
-            ("Brazil", "brasilia"), ("India", "new delhi")
-        ]
-        
-        events_data = [
-            ("World Wide Web invented", "1991"), ("Google founded", "1998"),
-            ("YouTube launched", "2005"), ("iPhone released", "2007"),
-            ("Bitcoin created", "2009"), ("Instagram launched", "2010")
-        ]
+        # Vietnam-focused question database
+        vietnam_questions = {
+            "geography": [
+                ("What is the highest mountain in Vietnam?", "fansipan"),
+                ("Which river is the longest in Vietnam?", "mekong"),
+                ("What is Vietnam's largest island?", "phu quoc"),
+                ("Which province is known as the 'rice bowl' of Vietnam?", "an giang"),
+                ("What is the name of Vietnam's famous bay with limestone pillars?", "ha long bay"),
+                ("Which city was the former capital of South Vietnam?", "saigon"),
+                ("What is the northernmost province of Vietnam?", "ha giang"),
+                ("Which delta is in southern Vietnam?", "mekong delta"),
+                ("What is Vietnam's largest lake?", "ba be lake"),
+                ("Which mountain range runs along Vietnam's western border?", "truong son")
+            ],
+            "history": [
+                ("In what year did Vietnam reunify?", "1975"),
+                ("Who was Vietnam's first president?", "ho chi minh"),
+                ("What year did the Battle of Dien Bien Phu occur?", "1954"),
+                ("When did Vietnam join ASEAN?", "1995"),
+                ("What year was Hanoi founded?", "1010"),
+                ("When did the Ly Dynasty begin in Vietnam?", "1009"),
+                ("What year did Vietnam join the WTO?", "2007"),
+                ("When was the Temple of Literature built in Hanoi?", "1070"),
+                ("What year did Vietnam start Doi Moi reforms?", "1986"),
+                ("When did Vietnam establish diplomatic relations with the US?", "1995")
+            ],
+            "culture": [
+                ("What is Vietnam's traditional long dress called?", "ao dai"),
+                ("What is Vietnam's most famous soup?", "pho"),
+                ("What is the traditional Vietnamese New Year called?", "tet"),
+                ("What instrument is used in Vietnamese traditional music?", "dan bau"),
+                ("What is Vietnam's national epic poem?", "kieu"),
+                ("Who wrote the Tale of Kieu?", "nguyen du"),
+                ("What is the traditional Vietnamese hat called?", "non la"),
+                ("What is Vietnam's traditional martial art?", "vovinam"),
+                ("What is the name of Vietnamese spring rolls?", "goi cuon"),
+                ("What is Vietnam's traditional coffee preparation method?", "phin filter")
+            ],
+            "biology": [
+                ("What is Vietnam's national animal?", "water buffalo"),
+                ("Which endangered primate lives in Vietnam?", "langur"),
+                ("What type of bear is found in Vietnam?", "asian black bear"),
+                ("Which big cat species lives in Vietnam?", "leopard"),
+                ("What is Vietnam's largest snake species?", "reticulated python"),
+                ("Which crane species migrates to Vietnam?", "red crowned crane"),
+                ("What endangered turtle species is found in Hoan Kiem Lake?", "yangtze giant softshell turtle"),
+                ("Which monkey species is endemic to Vietnam?", "tonkin snub nosed monkey"),
+                ("What is Vietnam's largest freshwater fish?", "mekong giant catfish"),
+                ("Which bird is considered Vietnam's national bird?", "red crowned crane")
+            ],
+            "technology": [
+                ("What is Vietnam's largest technology company?", "fpt"),
+                ("Which Vietnamese app is popular for motorbike taxis?", "grab"),
+                ("What is Vietnam's main internet domain?", ".vn"),
+                ("Which Vietnamese company makes smartphones?", "vsmart"),
+                ("What is Vietnam's national payment system?", "napas"),
+                ("Which Vietnamese social network was popular before Facebook?", "zing me"),
+                ("What is Vietnam's largest e-commerce platform?", "shopee"),
+                ("Which Vietnamese company provides cloud services?", "viettel"),
+                ("What is Vietnam's main telecommunications company?", "vnpt"),
+                ("Which Vietnamese startup is known for AI?", "fpt ai")
+            ],
+            "math": [
+                ("If Hanoi has 8 million people and Ho Chi Minh City has 9 million, what's the total?", "17 million"),
+                ("Vietnam has 63 provinces. If 5 are municipalities, how many regular provinces?", "58"),
+                ("If pho costs 50,000 VND and you buy 3 bowls, how much total?", "150000"),
+                ("Vietnam's area is 331,212 km². Round to nearest thousand.", "331000"),
+                ("If Vietnam's population is 98 million, what's half of that?", "49 million"),
+                ("Ha Long Bay has 1,600 islands. If 400 are large, how many are small?", "1200"),
+                ("If banh mi costs 25,000 VND and coffee costs 15,000 VND, what's the total?", "40000"),
+                ("Vietnam spans 1,650 km north to south. What's half that distance?", "825"),
+                ("If Vietnam has 54 ethnic groups and Kinh is 1, how many minorities?", "53"),
+                ("Vietnam War lasted from 1955 to 1975. How many years?", "20")
+            ],
+            "chemistry": [
+                ("What chemical makes Vietnamese fish sauce salty?", "sodium chloride"),
+                ("Which element is abundant in Vietnam's iron ore deposits?", "iron"),
+                ("What gas is produced when making Vietnamese rice wine?", "carbon dioxide"),
+                ("Which element is found in Vietnam's bauxite mines?", "aluminum"),
+                ("What compound gives Vietnamese chili its heat?", "capsaicin"),
+                ("Which acid is used in Vietnamese pickle making?", "acetic acid"),
+                ("What element is in Vietnam's coal deposits?", "carbon"),
+                ("Which compound makes Vietnamese green tea bitter?", "tannin"),
+                ("What chemical formula represents Vietnamese table salt?", "nacl"),
+                ("Which element is extracted from Vietnam's rare earth mines?", "cerium")
+            ],
+            "literature": [
+                ("Who is Vietnam's most famous poet?", "nguyen du"),
+                ("What is Vietnam's greatest literary work?", "kieu"),
+                ("Who wrote 'The Sorrow of War'?", "bao ninh"),
+                ("Which Vietnamese author won international recognition?", "nguyen huy thiep"),
+                ("What is the name of Vietnam's epic poem about a woman?", "kieu"),
+                ("Who wrote 'Paradise of the Blind'?", "duong thu huong"),
+                ("Which Vietnamese poet wrote about resistance?", "to huu"),
+                ("What is Vietnam's classical literature period called?", "medieval period"),
+                ("Who is known as the 'Shakespeare of Vietnam'?", "nguyen du"),
+                ("Which Vietnamese work is about a mandarin's daughter?", "kieu")
+            ]
+        }
         
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
@@ -361,30 +445,18 @@ class AntiSpamBot(commands.Bot):
                     break
                 
                 game = self.active_games[guild_id]
-                template = random.choice(question_templates)
                 
-                # Generate question based on template
-                if template[1] == "geography":
-                    country, capital = random.choice(geography_data)
-                    question = template[0].format(country=country)
-                    answer = capital
-                elif template[1] == "math":
-                    num1, num2 = random.randint(1, 50), random.randint(1, 50)
-                    question = template[0].format(num1=num1, num2=num2)
-                    answer = str(num1 + num2)
-                elif template[1] == "history":
-                    event, year = random.choice(events_data)
-                    question = template[0].format(event=event)
-                    answer = year
-                else:
-                    continue  # Skip other templates for now
+                # Choose random category and question
+                category = random.choice(list(vietnam_questions.keys()))
+                question_data = random.choice(vietnam_questions[category])
+                question, answer = question_data
                 
                 # Add to new questions pool
                 new_question = {"question": question, "answer": answer.lower()}
                 game['new_questions'].append(new_question)
                 game['last_generation_time'] = datetime.utcnow()
                 
-                logger.info(f"Generated new QNA question: {question}")
+                logger.info(f"Generated new QNA question ({category}): {question}")
                 
             except Exception as e:
                 logger.error(f"Error in QNA generation loop: {e}")
@@ -1122,13 +1194,13 @@ async def main():
             await ctx.send(embed=embed)
             return
         
-        # Start new QNA game
+        # Start new QNA game with Vietnam-focused questions
         questions = [
-            {"question": "What is the capital of France?", "answer": "paris"},
-            {"question": "What is 2 + 2?", "answer": "4"},
-            {"question": "Which planet is closest to the Sun?", "answer": "mercury"},
-            {"question": "What year was Discord founded?", "answer": "2015"},
-            {"question": "What does 'HTTP' stand for?", "answer": "hypertext transfer protocol"}
+            {"question": "What is the capital of Vietnam?", "answer": "hanoi"},
+            {"question": "What is the largest city in Vietnam?", "answer": "ho chi minh city"},
+            {"question": "What is Vietnam's national flower?", "answer": "lotus"},
+            {"question": "In what year did Vietnam gain independence?", "answer": "1945"},
+            {"question": "What is the currency of Vietnam?", "answer": "dong"}
         ]
         
         import random

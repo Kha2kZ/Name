@@ -278,8 +278,27 @@ class AntiSpamBot(commands.Bot):
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
                     
-                # Show new question
-                current_question = random.choice(game['questions'])
+                # Select next question (prioritize new questions, avoid repeats)
+                available_questions = []
+                
+                # First, try new generated questions
+                if game['new_questions']:
+                    available_questions = game['new_questions']
+                    current_question = random.choice(available_questions)
+                    game['new_questions'].remove(current_question)
+                else:
+                    # Use original questions, but avoid already shown ones
+                    available_questions = [q for q in game['questions'] if q not in game['shown_questions']]
+                    
+                    if not available_questions:
+                        # If all questions shown, reset and use all questions again
+                        available_questions = game['questions']
+                        game['shown_questions'] = []
+                    
+                    current_question = random.choice(available_questions)
+                
+                # Track that this question was shown
+                game['shown_questions'].append(current_question)
                 game['current_question'] = current_question
                 game['question_number'] += 1
                 game['last_question_time'] = datetime.utcnow()
@@ -356,9 +375,9 @@ class AntiSpamBot(commands.Bot):
                 else:
                     continue  # Skip other templates for now
                 
-                # Add to questions pool
+                # Add to new questions pool
                 new_question = {"question": question, "answer": answer.lower()}
-                game['questions'].append(new_question)
+                game['new_questions'].append(new_question)
                 game['last_generation_time'] = datetime.utcnow()
                 
                 logger.info(f"Generated new QNA question: {question}")
@@ -1122,7 +1141,9 @@ async def main():
             'last_question_time': datetime.utcnow(),
             'last_generation_time': datetime.utcnow(),
             'question_answered': False,
-            'question_start_time': datetime.utcnow()
+            'question_start_time': datetime.utcnow(),
+            'shown_questions': [current_question],
+            'new_questions': []
         }
         
         embed = discord.Embed(

@@ -23,6 +23,52 @@ from monitor import BotMonitor
 setup_logging()
 logger = logging.getLogger(__name__)
 
+def _parse_duration(duration_str):
+    """Parse duration string like '30s', '5m', '2h', '1d' into seconds"""
+    if not duration_str:
+        return None
+        
+    # Remove spaces and convert to lowercase
+    duration_str = duration_str.lower().strip()
+    
+    # Check if it's just a number (assume seconds)
+    if duration_str.isdigit():
+        return int(duration_str)
+    
+    # Parse format like "30s", "5m", "2h", "1d"
+    import re
+    match = re.match(r'^(\d+)([smhd])$', duration_str)
+    if not match:
+        return None
+    
+    value, unit = match.groups()
+    value = int(value)
+    
+    if unit == 's':
+        return value
+    elif unit == 'm':
+        return value * 60
+    elif unit == 'h':
+        return value * 3600
+    elif unit == 'd':
+        return value * 86400
+    
+    return None
+
+def _format_duration(seconds):
+    """Format seconds into human readable duration"""
+    if seconds < 60:
+        return f"{seconds} seconds"
+    elif seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} minutes"
+    elif seconds < 86400:
+        hours = seconds // 3600
+        return f"{hours} hours"
+    else:
+        days = seconds // 86400
+        return f"{days} days"
+
 class AntiSpamBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -1256,23 +1302,54 @@ async def main():
     
     @bot.command(name='timeout')
     @commands.has_permissions(moderate_members=True)
-    async def timeout_command(ctx, member: discord.Member, duration: int = 300, *, reason="No reason provided"):
-        """Timeout a member (duration in seconds)"""
-        success = await bot.moderation.timeout_member(member, duration, reason)
-        if success:
+    async def timeout_command(ctx, member: discord.Member, duration_str: str = "5m", *, reason="No reason provided"):
+        """Timeout a member (duration: 30s, 5m, 2h, 1d)"""
+        try:
+            # Parse duration string (e.g., "30s", "5m", "2h", "1d")
+            duration_seconds = _parse_duration(duration_str)
+            if duration_seconds is None:
+                embed = discord.Embed(
+                    title="❌ Invalid Duration",
+                    description="Please use format like: 30s, 5m, 2h, 1d\nExample: `?timeout @user 10m spam`",
+                    color=0xff4444
+                )
+                await ctx.send(embed=embed)
+                return
+                
+            # Discord max timeout is 28 days (2419200 seconds)
+            if duration_seconds > 2419200:
+                embed = discord.Embed(
+                    title="❌ Duration Too Long",
+                    description="Maximum timeout duration is 28 days.",
+                    color=0xff4444
+                )
+                await ctx.send(embed=embed)
+                return
+                
+            success = await bot.moderation.timeout_member(member, duration_seconds, reason)
+            if success:
+                embed = discord.Embed(
+                    title="⏰ Member Timed Out",
+                    description=f"**{member.display_name}** cannot send messages temporarily",
+                    color=0xffa500
+                )
+                embed.add_field(name="⏱️ Duration", value=_format_duration(duration_seconds), inline=True)
+                embed.add_field(name="📝 Reason", value=reason, inline=False)
+                embed.set_footer(text=f"Action by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+                await ctx.send(embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="❌ Timeout Failed",
+                    description="Unable to timeout this member. Check permissions.",
+                    color=0xff4444
+                )
+                await ctx.send(embed=embed)
+                
+        except Exception as e:
+            logger.error(f"Error in timeout command: {e}")
             embed = discord.Embed(
-                title="⏰ Member Timed Out",
-                description=f"**{member.display_name}** cannot send messages temporarily",
-                color=0xffa500
-            )
-            embed.add_field(name="⏱️ Duration", value=f"{duration} seconds", inline=True)
-            embed.add_field(name="📝 Reason", value=reason, inline=False)
-            embed.set_footer(text=f"Action by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
-            await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(
-                title="❌ Timeout Failed",
-                description="Unable to timeout this member. Check permissions.",
+                title="❌ Command Error",
+                description="An error occurred while processing the timeout command.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)

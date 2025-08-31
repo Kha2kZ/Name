@@ -8,6 +8,7 @@ import random
 import string
 from datetime import datetime, timedelta
 from typing import Optional
+from openai import OpenAI
 
 from config import ConfigManager
 from bot_detection import BotDetector
@@ -41,6 +42,11 @@ class AntiSpamBot(commands.Bot):
         self.moderation = ModerationTools(self)
         self.monitor = BotMonitor(self)
         
+        # Initialize OpenAI for translation
+        # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
+        # do not change this unless explicitly requested by the user
+        self.openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        
         # Track member joins for raid detection
         self.recent_joins = {}
         
@@ -50,6 +56,50 @@ class AntiSpamBot(commands.Bot):
         # Game system tracking
         self.active_games = {}
         self.leaderboard = {}
+        
+    async def translate_to_vietnamese(self, text):
+        """Translate English text to Vietnamese"""
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-5",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a professional translator. Translate the given English text to Vietnamese. Respond only with the Vietnamese translation, no additional text."
+                    },
+                    {
+                        "role": "user",
+                        "content": text
+                    }
+                ],
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Translation error: {e}")
+            return text  # Return original text if translation fails
+    
+    async def translate_to_english(self, vietnamese_text):
+        """Translate Vietnamese text to English for answer checking"""
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-5",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a professional translator. Translate the given Vietnamese text to English. Respond only with the English translation, no additional text."
+                    },
+                    {
+                        "role": "user",
+                        "content": vietnamese_text
+                    }
+                ],
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip().lower()
+        except Exception as e:
+            logger.error(f"Translation error: {e}")
+            return vietnamese_text.lower()  # Return original text if translation fails
         
     async def setup_hook(self):
         """Called when the bot is starting up"""
@@ -151,13 +201,19 @@ class AntiSpamBot(commands.Bot):
         current_question = game['current_question']
         user_id = str(message.author.id)
         
-        # Check if answer is correct
-        user_answer = message.content.lower().strip()
+        # Get user's answer and translate to English for comparison
+        user_answer = message.content.strip()
+        user_answer_english = await self.translate_to_english(user_answer)
         correct_answer = current_question['answer'].lower()
         
         # Check if answer matches (flexible matching)
         is_correct = False
-        if correct_answer == user_answer or correct_answer in user_answer or user_answer in correct_answer:
+        if (correct_answer == user_answer_english or 
+            correct_answer in user_answer_english or 
+            user_answer_english in correct_answer or
+            correct_answer == user_answer.lower() or
+            correct_answer in user_answer.lower() or
+            user_answer.lower() in correct_answer):
             is_correct = True
         
         if is_correct:
@@ -170,18 +226,18 @@ class AntiSpamBot(commands.Bot):
             game['players'][user_id] += 10
             
             embed = discord.Embed(
-                title="🎯 Correct Answer!",
-                description=f"**{message.author.display_name}** got it right!\n\n+10 points awarded!",
+                title="🎯 Đáp án chính xác!",
+                description=f"**{message.author.display_name}** đã trả lời đúng!\n\n+10 điểm được trao!",
                 color=0x00ff88
             )
             embed.add_field(
-                name="✅ Answer",
-                value=f"**{current_question['answer'].title()}**",
+                name="✅ Đáp án",
+                value=f"**{current_question['vietnamese_answer']}**",
                 inline=True
             )
             embed.add_field(
-                name="🏆 Your Score",
-                value=f"**{game['players'][user_id]} points**",
+                name="🏆 Điểm của bạn",
+                value=f"**{game['players'][user_id]} điểm**",
                 inline=True
             )
             
@@ -337,103 +393,102 @@ class AntiSpamBot(commands.Bot):
         """Generate new Vietnam-focused questions every 30 seconds"""
         import random
         
-        # Vietnam-focused question database
+        # Vietnam-focused question database (Vietnamese questions with English answers for matching)
         vietnam_questions = {
             "geography": [
-                ("What is the highest mountain in Vietnam?", "fansipan"),
-                ("Which river is the longest in Vietnam?", "mekong"),
-                ("What is Vietnam's largest island?", "phu quoc"),
-                ("Which province is known as the 'rice bowl' of Vietnam?", "an giang"),
-                ("What is the name of Vietnam's famous bay with limestone pillars?", "ha long bay"),
-                ("Which city was the former capital of South Vietnam?", "saigon"),
-                ("What is the northernmost province of Vietnam?", "ha giang"),
-                ("Which delta is in southern Vietnam?", "mekong delta"),
-                ("What is Vietnam's largest lake?", "ba be lake"),
-                ("Which mountain range runs along Vietnam's western border?", "truong son")
+                ("Núi cao nhất Việt Nam là gì?", "fansipan", "Fansipan"),
+                ("Sông nào dài nhất ở Việt Nam?", "mekong", "Sông Mê Không"),
+                ("Đảo lớn nhất của Việt Nam là đảo nào?", "phu quoc", "Phú Quốc"),
+                ("Tỉnh nào được gọi là 'vựa lúa' của Việt Nam?", "an giang", "An Giang"),
+                ("Vịnh nổi tiếng của Việt Nam với những cột đá vôi là gì?", "ha long bay", "Vịnh Hạ Long"),
+                ("Thành phố nào là thủ đô cũ của Miền Nam Việt Nam?", "saigon", "Sài Gòn"),
+                ("Tỉnh cực bắc của Việt Nam là tỉnh nào?", "ha giang", "Hà Giang"),
+                ("Đồng bằng nào ở miền Nam Việt Nam?", "mekong delta", "Đồng bằng sông Cửu Long"),
+                ("Hồ lớn nhất Việt Nam là hồ nào?", "ba be lake", "Hồ Ba Bể"),
+                ("Dãy núi nào chạy dọc biên giới phía tây Việt Nam?", "truong son", "Trường Sơn")
             ],
             "history": [
-                ("In what year did Vietnam reunify?", "1975"),
-                ("Who was Vietnam's first president?", "ho chi minh"),
-                ("What year did the Battle of Dien Bien Phu occur?", "1954"),
-                ("When did Vietnam join ASEAN?", "1995"),
-                ("What year was Hanoi founded?", "1010"),
-                ("When did the Ly Dynasty begin in Vietnam?", "1009"),
-                ("What year did Vietnam join the WTO?", "2007"),
-                ("When was the Temple of Literature built in Hanoi?", "1070"),
-                ("What year did Vietnam start Doi Moi reforms?", "1986"),
-                ("When did Vietnam establish diplomatic relations with the US?", "1995")
+                ("Việt Nam thống nhất vào năm nào?", "1975", "1975"),
+                ("Tổng thống đầu tiên của Việt Nam là ai?", "ho chi minh", "Hồ Chí Minh"),
+                ("Trận Điện Biên Phủ diễn ra vào năm nào?", "1954", "1954"),
+                ("Việt Nam gia nhập ASEAN vào năm nào?", "1995", "1995"),
+                ("Hà Nội được thành lập vào năm nào?", "1010", "1010"),
+                ("Triều đại Lý bắt đầu vào năm nào?", "1009", "1009"),
+                ("Việt Nam gia nhập WTO vào năm nào?", "2007", "2007"),
+                ("Văn Miếu Hà Nội được xây dựng vào năm nào?", "1070", "1070"),
+                ("Việt Nam bắt đầu Đổi Mới vào năm nào?", "1986", "1986"),
+                ("Việt Nam thiết lập quan hệ ngoại giao với Mỹ vào năm nào?", "1995", "1995")
             ],
             "culture": [
-                ("What is Vietnam's traditional long dress called?", "ao dai"),
-                ("What is Vietnam's most famous soup?", "pho"),
-                ("What is the traditional Vietnamese New Year called?", "tet"),
-                ("What instrument is used in Vietnamese traditional music?", "dan bau"),
-                ("What is Vietnam's national epic poem?", "kieu"),
-                ("Who wrote the Tale of Kieu?", "nguyen du"),
-                ("What is the traditional Vietnamese hat called?", "non la"),
-                ("What is Vietnam's traditional martial art?", "vovinam"),
-                ("What is the name of Vietnamese spring rolls?", "goi cuon"),
-                ("What is Vietnam's traditional coffee preparation method?", "phin filter")
-            ],
+                ("Trang phục truyền thống dài của Việt Nam gọi là gì?", "ao dai", "Áo dài"),
+                ("Món canh nổi tiếng nhất của Việt Nam là gì?", "pho", "Phở"),
+                ("Tết của người Việt gọi là gì?", "tet", "Tết"),
+                ("Nhạc cụ truyền thống Việt Nam là gì?", "dan bau", "Đàn bầu"),
+                ("Tác phẩm sử thi vĩ đại nhất của Việt Nam là gì?", "kieu", "Truyện Kiều"),
+                ("Ai là tác giả của Truyện Kiều?", "nguyen du", "Nguyễn Du"),
+                ("Nón truyền thống của Việt Nam gọi là gì?", "non la", "Nón lá"),
+                ("Võ thuật truyền thống của Việt Nam là gì?", "vovinam", "Vovinam"),
+                ("Gỏi cuốn Việt Nam gọi là gì?", "goi cuon", "Gỏi cuốn"),
+                ("Phương pháp pha cà phê truyền thống của Việt Nam là gì?", "phin filter", "Phin")            ],
             "biology": [
-                ("What is Vietnam's national animal?", "water buffalo"),
-                ("Which endangered primate lives in Vietnam?", "langur"),
-                ("What type of bear is found in Vietnam?", "asian black bear"),
-                ("Which big cat species lives in Vietnam?", "leopard"),
-                ("What is Vietnam's largest snake species?", "reticulated python"),
-                ("Which crane species migrates to Vietnam?", "red crowned crane"),
-                ("What endangered turtle species is found in Hoan Kiem Lake?", "yangtze giant softshell turtle"),
-                ("Which monkey species is endemic to Vietnam?", "tonkin snub nosed monkey"),
-                ("What is Vietnam's largest freshwater fish?", "mekong giant catfish"),
-                ("Which bird is considered Vietnam's national bird?", "red crowned crane")
+                ("Con vật quốc gia của Việt Nam là gì?", "water buffalo", "Trâu nước"),
+                ("Loài khỉ nào bị tuyệt chủng ở Việt Nam?", "langur", "Vườn"),
+                ("Loài gấu nào sống ở Việt Nam?", "asian black bear", "Gấu ngựa Á châu"),
+                ("Mèo lớn nào sống ở Việt Nam?", "leopard", "Báo hoa mai"),
+                ("Loài rắn lớn nhất ở Việt Nam?", "reticulated python", "Trăn lưới"),
+                ("Loài súng nào di cư đến Việt Nam?", "red crowned crane", "Súng đầu đỏ"),
+                ("Loài rùa bị tuyệt chủng nào ở Hồ Hoàn Kiếm?", "yangtze giant softshell turtle", "Rùa Hồ Gươm"),
+                ("Loài khỉ đặc hữu của Việt Nam là gì?", "tonkin snub nosed monkey", "Vườn mũi hếch"),
+                ("Cá nước ngọt lớn nhất Việt Nam?", "mekong giant catfish", "Cá tra dau"),
+                ("Chim quốc gia của Việt Nam?", "red crowned crane", "Súng đầu đỏ")
             ],
             "technology": [
-                ("What is Vietnam's largest technology company?", "fpt"),
-                ("Which Vietnamese app is popular for motorbike taxis?", "grab"),
-                ("What is Vietnam's main internet domain?", ".vn"),
-                ("Which Vietnamese company makes smartphones?", "vsmart"),
-                ("What is Vietnam's national payment system?", "napas"),
-                ("Which Vietnamese social network was popular before Facebook?", "zing me"),
-                ("What is Vietnam's largest e-commerce platform?", "shopee"),
-                ("Which Vietnamese company provides cloud services?", "viettel"),
-                ("What is Vietnam's main telecommunications company?", "vnpt"),
-                ("Which Vietnamese startup is known for AI?", "fpt ai")
+                ("Công ty công nghệ lớn nhất Việt Nam?", "fpt", "FPT"),
+                ("Ứng dụng xe ôm của Việt Nam là gì?", "grab", "Grab"),
+                ("Tên miền internet của Việt Nam là gì?", ".vn", ".vn"),
+                ("Công ty Việt Nam sản xuất điện thoại thông minh?", "vsmart", "VinSmart"),
+                ("Hệ thống thanh toán quốc gia của Việt Nam?", "napas", "NAPAS"),
+                ("Mạng xã hội Việt trước Facebook là gì?", "zing me", "Zing Me"),
+                ("Nền tảng thương mại điện tử lớn nhất Việt Nam?", "shopee", "Shopee"),
+                ("Công ty Việt cung cấp dịch vụ điện toán đám mây?", "viettel", "Viettel"),
+                ("Công ty viễn thông chính của Việt Nam?", "vnpt", "VNPT"),
+                ("Công ty khoi nghiệp Việt nổi tiếng về AI?", "fpt ai", "FPT AI")
             ],
             "math": [
-                ("If Hanoi has 8 million people and Ho Chi Minh City has 9 million, what's the total?", "17 million"),
-                ("Vietnam has 63 provinces. If 5 are municipalities, how many regular provinces?", "58"),
-                ("If pho costs 50,000 VND and you buy 3 bowls, how much total?", "150000"),
-                ("Vietnam's area is 331,212 km². Round to nearest thousand.", "331000"),
-                ("If Vietnam's population is 98 million, what's half of that?", "49 million"),
-                ("Ha Long Bay has 1,600 islands. If 400 are large, how many are small?", "1200"),
-                ("If banh mi costs 25,000 VND and coffee costs 15,000 VND, what's the total?", "40000"),
-                ("Vietnam spans 1,650 km north to south. What's half that distance?", "825"),
-                ("If Vietnam has 54 ethnic groups and Kinh is 1, how many minorities?", "53"),
-                ("Vietnam War lasted from 1955 to 1975. How many years?", "20")
+                ("Nếu Hà Nội có 8 triệu dân và TP.HCM có 9 triệu dân, tổng là bao nhiêu?", "17 million", "17 triệu"),
+                ("Việt Nam có 63 tỉnh thành. Nếu 5 là thành phố trực thuộc TW, còn lại bao nhiêu tỉnh?", "58", "58"),
+                ("Nếu tô phở giá 50.000 VNĐ và mua 3 tô, tổng tiền là bao nhiêu?", "150000", "150.000"),
+                ("Diện tích Việt Nam là 331.212 km². Làm tròn đến hàng nghìn.", "331000", "331.000"),
+                ("Nếu Việt Nam có 98 triệu dân, một nửa là bao nhiêu?", "49 million", "49 triệu"),
+                ("Vịnh Hạ Long có 1.600 hòn đảo. Nếu 400 hòn lớn, bao nhiêu hòn nhỏ?", "1200", "1.200"),
+                ("Nếu bánh mì 25.000 VNĐ và cà phê 15.000 VNĐ, tổng cộng là bao nhiêu?", "40000", "40.000"),
+                ("Việt Nam dài 1.650 km từ Bắc vào Nam. Một nửa là bao nhiêu km?", "825", "825"),
+                ("Nếu Việt Nam có 54 dân tộc và Kiền là 1, còn lại bao nhiêu dân tộc thiểu số?", "53", "53"),
+                ("Chiến tranh Việt Nam từ 1955 đến 1975. Bao nhiêu năm?", "20", "20")
             ],
             "chemistry": [
-                ("What chemical makes Vietnamese fish sauce salty?", "sodium chloride"),
-                ("Which element is abundant in Vietnam's iron ore deposits?", "iron"),
-                ("What gas is produced when making Vietnamese rice wine?", "carbon dioxide"),
-                ("Which element is found in Vietnam's bauxite mines?", "aluminum"),
-                ("What compound gives Vietnamese chili its heat?", "capsaicin"),
-                ("Which acid is used in Vietnamese pickle making?", "acetic acid"),
-                ("What element is in Vietnam's coal deposits?", "carbon"),
-                ("Which compound makes Vietnamese green tea bitter?", "tannin"),
-                ("What chemical formula represents Vietnamese table salt?", "nacl"),
-                ("Which element is extracted from Vietnam's rare earth mines?", "cerium")
+                ("Hóa chất nào làm nước mắm Việt Nam mặn?", "sodium chloride", "Natri clorua"),
+                ("Nguyên tố nào phổ biến trong quặng sắt Việt Nam?", "iron", "Sắt"),
+                ("Khí nào được tạo ra khi làm rượu cần Việt Nam?", "carbon dioxide", "Cacbon đioxit"),
+                ("Nguyên tố nào ở mỏ boxit Việt Nam?", "aluminum", "Nhôm"),
+                ("Hợp chất nào làm ớt Việt Nam cay?", "capsaicin", "Capsaicin"),
+                ("Axit nào dùng để làm dưa chua Việt Nam?", "acetic acid", "Axit axetic"),
+                ("Nguyên tố nào trong than đá Việt Nam?", "carbon", "Cacbon"),
+                ("Hợp chất nào làm trà xanh Việt Nam đắng?", "tannin", "Tannin"),
+                ("Công thức hóa học của muối ăn Việt Nam?", "nacl", "NaCl"),
+                ("Nguyên tố nào được khai thác từ mỏ đất hiếm Việt Nam?", "cerium", "Cerium")
             ],
             "literature": [
-                ("Who is Vietnam's most famous poet?", "nguyen du"),
-                ("What is Vietnam's greatest literary work?", "kieu"),
-                ("Who wrote 'The Sorrow of War'?", "bao ninh"),
-                ("Which Vietnamese author won international recognition?", "nguyen huy thiep"),
-                ("What is the name of Vietnam's epic poem about a woman?", "kieu"),
-                ("Who wrote 'Paradise of the Blind'?", "duong thu huong"),
-                ("Which Vietnamese poet wrote about resistance?", "to huu"),
-                ("What is Vietnam's classical literature period called?", "medieval period"),
-                ("Who is known as the 'Shakespeare of Vietnam'?", "nguyen du"),
-                ("Which Vietnamese work is about a mandarin's daughter?", "kieu")
+                ("Nhà thơ nổi tiếng nhất Việt Nam là ai?", "nguyen du", "Nguyễn Du"),
+                ("Tác phẩm văn học vĩ đại nhất Việt Nam là gì?", "kieu", "Truyện Kiều"),
+                ("Ai viết 'Nỗi buồn chiến tranh'?", "bao ninh", "Bảo Ninh"),
+                ("Nhà văn Việt Nam nào nổi tiếng quốc tế?", "nguyen huy thiep", "Nguyễn Huy Thiệp"),
+                ("Tên bài thơ sử thi Việt Nam về người phụ nữ?", "kieu", "Truyện Kiều"),
+                ("Ai viết 'Thiên đường mù'?", "duong thu huong", "Dương Thu Hương"),
+                ("Nhà thơ Việt Nam viết về kháng chiến?", "to huu", "Tố Hữu"),
+                ("Thời kỳ văn học cổ điển Việt Nam gọi là gì?", "medieval period", "Trung đại"),
+                ("Ai được gọi là 'Shakespeare Việt Nam'?", "nguyen du", "Nguyễn Du"),
+                ("Tác phẩm Việt Nam kể về cô con gái quan?", "kieu", "Truyện Kiều")
             ]
         }
         

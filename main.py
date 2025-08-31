@@ -462,20 +462,42 @@ class AntiSpamBot(commands.Bot):
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
-                        # No available questions in current session, wait for new generation
-                        logger.info("No available questions in current session")
-                        await asyncio.sleep(5)  # Wait 5 seconds before trying again
+                        # No available questions, show waiting message and continue
+                        logger.info("No available questions, waiting for new generation")
+                        current_question = {
+                            "question": "🔄 Đang tạo câu hỏi mới... Vui lòng chờ giây lát!", 
+                            "answer": "waiting", 
+                            "vietnamese_answer": "Đang chờ...",
+                            "is_placeholder": True
+                        }
+                        
+                        # Show waiting message and wait before trying again
+                        embed = discord.Embed(
+                            title="🔄 Tạo câu hỏi mới",
+                            description="**Đang tạo câu hỏi mới... Vui lòng chờ giây lát!**",
+                            color=0xffa500
+                        )
+                        embed.add_field(
+                            name="⏳ Trạng thái",
+                            value="**Hệ thống đang tạo câu hỏi mới từ cơ sở dữ liệu**",
+                            inline=False
+                        )
+                        embed.set_footer(text="Câu hỏi mới sẽ xuất hiện sớm!")
+                        
+                        await game['channel'].send(embed=embed)
+                        await asyncio.sleep(10)  # Wait 10 seconds before trying again
                         continue
                     
                     # Select from available_questions that passed the filter
                     current_question = random.choice(available_questions)
                     logger.info(f"Using available original question: {current_question['question']}")
                 
-                # Track that this question was shown in memory and database
-                game['shown_questions'].add(current_question['question'])
-                self._mark_question_shown(guild_id, current_question['question'])
-                if current_question in game['questions']:
-                    game['questions'].remove(current_question)
+                # Track that this question was shown in memory and database (skip for placeholders)
+                if not current_question.get('is_placeholder', False):
+                    game['shown_questions'].add(current_question['question'])
+                    self._mark_question_shown(guild_id, current_question['question'])
+                    if current_question in game['questions']:
+                        game['questions'].remove(current_question)
                 
                 game['current_question'] = current_question
                 game['question_number'] += 1
@@ -1396,8 +1418,13 @@ async def main():
         if available_starter_questions:
             current_question = random.choice(available_starter_questions)
         else:
-            # All starter questions shown, pick any for now
-            current_question = random.choice(questions)
+            # All starter questions shown, use a placeholder question until new ones are generated
+            current_question = {
+                "question": "🔄 Đang tạo câu hỏi mới...", 
+                "answer": "waiting", 
+                "vietnamese_answer": "Đang chờ...",
+                "is_placeholder": True
+            }
         
         bot.active_games[guild_id] = {
             'questions': questions,

@@ -104,6 +104,27 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error marking question as shown: {e}")
     
+    def _batch_mark_questions_shown(self, guild_id, questions):
+        """Mark multiple questions as shown for this guild (batch operation)"""
+        if not self.db_connection or not questions:
+            return
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                # Use executemany for batch insert
+                values = [(guild_id, question) for question in questions]
+                cursor.executemany(
+                    "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
+                    values
+                )
+                self.db_connection.commit()
+                logger.info(f"Batch marked {len(questions)} questions as shown for guild {guild_id}")
+        except Exception as e:
+            logger.error(f"Error batch marking questions as shown: {e}")
+            # Fallback to individual inserts
+            for question in questions:
+                self._mark_question_shown(guild_id, question)
+
     def _reset_question_history(self, guild_id):
         """Reset question history for a guild (admin command)"""
         if not self.db_connection:
@@ -462,30 +483,27 @@ class AntiSpamBot(commands.Bot):
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
-                        # No available questions, show waiting message and continue
+                        # No available questions - wait for new generation without sending duplicate messages
                         logger.info("No available questions, waiting for new generation")
-                        current_question = {
-                            "question": "🔄 Đang tạo câu hỏi mới... Vui lòng chờ giây lát!", 
-                            "answer": "waiting", 
-                            "vietnamese_answer": "Đang chờ...",
-                            "is_placeholder": True
-                        }
                         
-                        # Show waiting message and wait before trying again
-                        embed = discord.Embed(
-                            title="🔄 Tạo câu hỏi mới",
-                            description="**Đang tạo câu hỏi mới... Vui lòng chờ giây lát!**",
-                            color=0xffa500
-                        )
-                        embed.add_field(
-                            name="⏳ Trạng thái",
-                            value="**Hệ thống đang tạo câu hỏi mới từ cơ sở dữ liệu**",
-                            inline=False
-                        )
-                        embed.set_footer(text="Câu hỏi mới sẽ xuất hiện sớm!")
+                        # Only show waiting message once per session
+                        if not game.get('waiting_message_sent', False):
+                            embed = discord.Embed(
+                                title="🔄 Tạo câu hỏi mới",
+                                description="**Đang tạo câu hỏi mới... Vui lòng chờ giây lát!**",
+                                color=0xffa500
+                            )
+                            embed.add_field(
+                                name="⏳ Trạng thái",
+                                value="**Hệ thống đang tạo câu hỏi mới từ cơ sở dữ liệu**",
+                                inline=False
+                            )
+                            embed.set_footer(text="Câu hỏi mới sẽ xuất hiện sớm!")
+                            
+                            await game['channel'].send(embed=embed)
+                            game['waiting_message_sent'] = True
                         
-                        await game['channel'].send(embed=embed)
-                        await asyncio.sleep(10)  # Wait 10 seconds before trying again
+                        await asyncio.sleep(5)  # Shorter wait, no continue to avoid loop restart
                         continue
                     
                     # Select from available_questions that passed the filter
@@ -628,41 +646,57 @@ class AntiSpamBot(commands.Bot):
         
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
-                await asyncio.sleep(30)  # Generate new question every 30 seconds
+                await asyncio.sleep(5)  # Much faster generation - every 5 seconds
                 
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
                 
                 game = self.active_games[guild_id]
                 
-                # Choose random category and question, avoid duplicates
-                category = random.choice(list(vietnam_questions.keys()))
+                # Generate multiple questions at once for better performance
+                questions_to_generate = min(3, 10)  # Generate up to 3 at once
                 
-                # Get all questions that haven't been shown yet
+                # Efficiently filter available questions (avoid nested loops)
                 available_new_questions = []
                 for cat_name, cat_questions in vietnam_questions.items():
                     for q_data in cat_questions:
-                        question_text = q_data[0]
-                        if question_text not in game['shown_questions']:
-                            available_new_questions.append(q_data)
+                        if q_data[0] not in game['shown_questions']:
+                            available_new_questions.append((cat_name, q_data))
                 
-                # If we have new questions available, use one
-                if available_new_questions:
-                    question_data = random.choice(available_new_questions)
-                    question, answer, vietnamese_answer = question_data
+                # If we have new questions available and queue isn't full, generate several
+                if available_new_questions and len(game['new_questions']) < 5:  # Keep queue small
+                    questions_added = []
                     
-                    # Add to new questions pool and mark as shown
-                    new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
-                    game['new_questions'].append(new_question)
-                    game['shown_questions'].add(question)
-                    self._mark_question_shown(guild_id, question)
+                    for _ in range(min(questions_to_generate, len(available_new_questions))):
+                        if not available_new_questions:
+                            break
+                            
+                        category, question_data = random.choice(available_new_questions)
+                        question, answer, vietnamese_answer = question_data
+                        
+                        # Add to new questions pool and mark as shown
+                        new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
+                        game['new_questions'].append(new_question)
+                        game['shown_questions'].add(question)
+                        questions_added.append(question)
+                        
+                        # Remove from available list to avoid duplicates in this batch
+                        available_new_questions.remove((category, question_data))
+                        
+                        logger.info(f"Generated new QNA question ({category}): {question}")
+                    
+                    # Batch database operations for better performance
+                    if questions_added:
+                        self._batch_mark_questions_shown(guild_id, questions_added)
+                    
                     game['last_generation_time'] = datetime.utcnow()
                     
-                    logger.info(f"Generated new QNA question ({category}): {question}")
-                else:
+                    # Reset waiting message flag when new questions are available
+                    game['waiting_message_sent'] = False
+                elif not available_new_questions:
                     # All questions used, but DON'T reset database - keep persistent history
                     logger.info("All questions used, waiting for manual reset")
-                    # Don't generate this cycle, let admin reset if needed
+                    await asyncio.sleep(20)  # Wait longer when no questions available
                 
             except Exception as e:
                 logger.error(f"Error in QNA generation loop: {e}")
@@ -1411,34 +1445,19 @@ async def main():
             await ctx.send(embed=embed)
             return
         
-        # Start new QNA game with Vietnam-focused questions in Vietnamese
-        questions = [
-            {"question": "Thủ đô của Việt Nam là gì?", "answer": "hanoi", "vietnamese_answer": "Hà Nội"},
-            {"question": "Thành phố lớn nhất Việt Nam là gì?", "answer": "ho chi minh city", "vietnamese_answer": "TP. Hồ Chí Minh"},
-            {"question": "Quốc hoa của Việt Nam là gì?", "answer": "lotus", "vietnamese_answer": "Hoa sen"},
-            {"question": "Việt Nam giành độc lập vào năm nào?", "answer": "1945", "vietnamese_answer": "1945"},
-            {"question": "Đồng tiền của Việt Nam là gì?", "answer": "dong", "vietnamese_answer": "Đồng Việt Nam"}
-        ]
-        
-        # Load persistent question history from database
+        # Load persistent question history from database for better filtering
         shown_questions = bot._get_shown_questions(guild_id)
         
-        # Select first question that hasn't been shown before
-        import random
-        available_starter_questions = [q for q in questions if q['question'] not in shown_questions]
-        if available_starter_questions:
-            current_question = random.choice(available_starter_questions)
-        else:
-            # All starter questions shown, use a placeholder question until new ones are generated
-            current_question = {
-                "question": "🔄 Đang tạo câu hỏi mới...", 
-                "answer": "waiting", 
-                "vietnamese_answer": "Đang chờ...",
-                "is_placeholder": True
-            }
+        # Start with a placeholder question - let the generation loop provide all real questions
+        current_question = {
+            "question": "🔄 Bắt đầu tạo câu hỏi mới...", 
+            "answer": "waiting", 
+            "vietnamese_answer": "Đang khởi tạo...",
+            "is_placeholder": True
+        }
         
         bot.active_games[guild_id] = {
-            'questions': questions,
+            'questions': [],  # No hardcoded questions - all questions come from generation loop
             'current_question': current_question,
             'question_number': 1,
             'players': {},
@@ -1450,11 +1469,11 @@ async def main():
             'question_answered': False,
             'question_start_time': datetime.utcnow(),
             'shown_questions': shown_questions,  # Load from database
-            'new_questions': []
+            'new_questions': [],
+            'waiting_message_sent': False  # Track if waiting message was sent
         }
         
-        # Mark the first question as shown in database
-        bot._mark_question_shown(guild_id, current_question['question'])
+        # Don't mark placeholder questions as shown in database
         
         embed = discord.Embed(
             title="🤔 Thử thách QNA đã kích hoạt!",

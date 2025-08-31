@@ -422,29 +422,9 @@ class AntiSpamBot(commands.Bot):
                             "vietnamese_answer": question_data[2]
                         }
                     else:
-                        # If no questions available, prioritize Vietnamese questions from the database
-                        import random
-                        vietnam_questions = {
-                            "geography": [
-                                ("Núi cao nhất Việt Nam là gì?", "fansipan", "Fansipan"),
-                                ("Sông nào dài nhất ở Việt Nam?", "mekong", "Sông Mê Kông"),
-                                ("Đảo lớn nhất của Việt Nam là đảo nào?", "phu quoc", "Phú Quốc")
-                            ],
-                            "history": [
-                                ("Việt Nam thống nhất vào năm nào?", "1975", "1975"),
-                                ("Tổng thống đầu tiên của Việt Nam là ai?", "ho chi minh", "Hồ Chí Minh"),
-                                ("Trận Điện Biên Phủ diễn ra vào năm nào?", "1954", "1954")
-                            ]
-                        }
-                        category = random.choice(list(vietnam_questions.keys()))
-                        question_data = random.choice(vietnam_questions[category])
-                        question, answer, vietnamese_answer = question_data
-                        current_question = {
-                            "question": question,
-                            "answer": answer.lower(),
-                            "vietnamese_answer": vietnamese_answer
-                        }
-                        logger.info(f"Using backup Vietnamese question: {current_question['question']}")
+                        # Select from available_questions that passed the filter
+                        current_question = random.choice(available_questions)
+                        logger.info(f"Using available original question: {current_question['question']}")
                 
                 # Track that this question was shown and remove from original pool
                 game['shown_questions'].add(current_question['question'])
@@ -1376,7 +1356,7 @@ async def main():
             'last_generation_time': datetime.utcnow(),
             'question_answered': False,
             'question_start_time': datetime.utcnow(),
-            'shown_questions': {current_question['question']},
+            'shown_questions': {current_question['question']},  # Track first question
             'new_questions': []
         }
         

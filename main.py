@@ -205,20 +205,74 @@ class AntiSpamBot(commands.Bot):
         current_question = game['current_question']
         user_id = str(message.author.id)
         
-        # Get user's answer and translate to English for comparison
-        user_answer = message.content.strip()
-        user_answer_english = await self.translate_to_english(user_answer)
+        # Get user's answer 
+        user_answer = message.content.strip().lower()
         correct_answer = current_question['answer'].lower()
+        vietnamese_answer = current_question.get('vietnamese_answer', '').lower()
         
-        # Check if answer matches (flexible matching)
+        # Fast local matching first (no API calls needed)
         is_correct = False
-        if (correct_answer == user_answer_english or 
-            correct_answer in user_answer_english or 
-            user_answer_english in correct_answer or
-            correct_answer == user_answer.lower() or
-            correct_answer in user_answer.lower() or
-            user_answer.lower() in correct_answer):
+        
+        # Direct Vietnamese and English answer matching
+        if (correct_answer == user_answer or 
+            correct_answer in user_answer or 
+            user_answer in correct_answer or
+            vietnamese_answer == user_answer or
+            vietnamese_answer in user_answer or
+            user_answer in vietnamese_answer):
             is_correct = True
+        
+        # Common Vietnamese answer variants (instant matching)
+        vietnamese_variants = {
+            'fansipan': ['phan xi păng', 'phan si pan', 'fanxipan', 'fan si pan'],
+            'mekong': ['cửu long', 'mê kông', 'mekong', 'sông mê kông', 'song mekong'],
+            'ho chi minh': ['bác hồ', 'chú hồ', 'hồ chí minh', 'hcm', 'ho chi minh'],
+            'hanoi': ['hà nội', 'ha noi', 'thủ đô', 'thu do'],
+            'pho': ['phở', 'pho', 'phở bò', 'pho bo'],
+            'ao dai': ['áo dài', 'ao dai', 'ao dai viet nam'],
+            'lotus': ['sen', 'hoa sen', 'lotus', 'quoc hoa'],
+            'dong': ['đồng', 'vnd', 'việt nam đồng', 'dong viet nam'],
+            '1975': ['1975', 'một nghìn chín trăm bảy mười lăm', 'nam 75'],
+            '1954': ['1954', 'một nghìn chín trăm năm mười tư', 'nam 54'],
+            '1995': ['1995', 'một nghìn chín trăm chín mười lăm', 'nam 95'],
+            'phu quoc': ['phú quốc', 'phu quoc', 'dao phu quoc'],
+            'an giang': ['an giang', 'an giang province', 'vua lua'],
+            'ha long bay': ['vịnh hạ long', 'ha long bay', 'vinh ha long'],
+            'saigon': ['sài gòn', 'saigon', 'sai gon'],
+            '58': ['58', 'năm mười tám', 'nam muoi tam'],
+            '17 triệu': ['17 triệu', '17000000', 'mười bảy triệu', 'muoi bay trieu']
+        }
+        
+        # Check Vietnamese variants instantly
+        for eng_answer, viet_variants in vietnamese_variants.items():
+            if eng_answer == correct_answer:
+                for variant in viet_variants:
+                    if variant in user_answer or user_answer in variant:
+                        is_correct = True
+                        break
+        
+        # Additional number and common word matching for speed
+        if not is_correct:
+            # Numbers matching (Vietnamese style)
+            if correct_answer.isdigit():
+                if correct_answer in user_answer or user_answer == correct_answer:
+                    is_correct = True
+            
+            # Remove diacritics for fuzzy matching
+            import unicodedata
+            def remove_diacritics(text):
+                return unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii')
+            
+            user_no_diacritics = remove_diacritics(user_answer)
+            answer_no_diacritics = remove_diacritics(vietnamese_answer)
+            
+            if (answer_no_diacritics and 
+                (answer_no_diacritics in user_no_diacritics or 
+                 user_no_diacritics in answer_no_diacritics)):
+                is_correct = True
+        
+        # Skip slow translation API entirely to maintain speed
+        # The local matching above should handle 99% of cases instantly
         
         if is_correct:
             # Mark question as answered
@@ -236,7 +290,7 @@ class AntiSpamBot(commands.Bot):
             )
             embed.add_field(
                 name="✅ Đáp án",
-                value=f"**{current_question['vietnamese_answer']}**",
+                value=f"**{current_question.get('vietnamese_answer', current_question['answer'])}**",
                 inline=True
             )
             embed.add_field(

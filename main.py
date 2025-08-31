@@ -47,6 +47,10 @@ class AntiSpamBot(commands.Bot):
         # Track pending verifications
         self.pending_verifications = {}
         
+        # Game system tracking
+        self.active_games = {}
+        self.leaderboard = {}
+        
     async def setup_hook(self):
         """Called when the bot is starting up"""
         logger.info("Bot is starting up...")
@@ -118,6 +122,9 @@ class AntiSpamBot(commands.Bot):
             await self.process_commands(message)
             return
             
+        # Check for trivia game answers
+        await self._check_trivia_answer(message)
+        
         # Check for spam
         is_spam = await self.spam_detector.check_message(message)
         
@@ -132,6 +139,132 @@ class AntiSpamBot(commands.Bot):
         guild_id = str(member.guild.id)
         self.monitor.record_member_event('leave', guild_id, str(member.id))
         logger.info(f"Member left {member.guild.name}: {member} ({member.id})")
+    
+    async def _check_trivia_answer(self, message):
+        """Check if message is a trivia game answer"""
+        guild_id = str(message.guild.id)
+        
+        if guild_id not in self.active_games:
+            return
+        
+        game = self.active_games[guild_id]
+        current_question = game['current_question']
+        user_id = str(message.author.id)
+        
+        # Check if answer is correct
+        user_answer = message.content.lower().strip()
+        correct_answer = current_question['answer'].lower()
+        
+        # Check if it's a number answer (1-4)
+        is_correct = False
+        if user_answer.isdigit():
+            try:
+                answer_index = int(user_answer) - 1
+                if 0 <= answer_index < len(current_question['options']):
+                    selected_option = current_question['options'][answer_index].lower()
+                    if correct_answer in selected_option:
+                        is_correct = True
+            except:
+                pass
+        elif correct_answer in user_answer or user_answer in correct_answer:
+            is_correct = True
+        
+        if is_correct:
+            # Award points
+            if user_id not in game['players']:
+                game['players'][user_id] = 0
+            game['players'][user_id] += 10
+            
+            embed = discord.Embed(
+                title="🎯 Correct Answer!",
+                description=f"**{message.author.display_name}** got it right!\n\n+10 points awarded!",
+                color=0x00ff88
+            )
+            embed.add_field(
+                name="✅ Answer",
+                value=f"**{current_question['answer'].title()}**",
+                inline=True
+            )
+            embed.add_field(
+                name="🏆 Your Score",
+                value=f"**{game['players'][user_id]} points**",
+                inline=True
+            )
+            
+            await message.channel.send(embed=embed)
+            
+            # Move to next question
+            game['question_number'] += 1
+            if game['question_number'] > 5:
+                await self._end_game_from_message(message, guild_id)
+            else:
+                # Next question after a delay
+                await asyncio.sleep(2)
+                import random
+                current_question = random.choice(game['questions'])
+                game['current_question'] = current_question
+                
+                embed = discord.Embed(
+                    title="📊 Next Question",
+                    description=f"🧠 **Question {game['question_number']}/5**",
+                    color=0x5865f2
+                )
+                embed.add_field(
+                    name="❓ Question",
+                    value=f"**{current_question['question']}**\n\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_question['options'])]),
+                    inline=False
+                )
+                
+                await message.channel.send(embed=embed)
+        
+    async def _end_game_from_message(self, message, guild_id):
+        """End game from message context"""
+        game = self.active_games[guild_id]
+        players = game['players']
+        
+        if not players:
+            embed = discord.Embed(
+                title="🎮 Game Ended",
+                description="Game finished with no players!",
+                color=0xff4444
+            )
+            await message.channel.send(embed=embed)
+        else:
+            # Update leaderboard
+            if guild_id not in self.leaderboard:
+                self.leaderboard[guild_id] = {}
+            
+            for user_id, score in players.items():
+                if user_id not in self.leaderboard[guild_id]:
+                    self.leaderboard[guild_id][user_id] = 0
+                self.leaderboard[guild_id][user_id] += score
+            
+            # Show final results
+            sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
+            
+            embed = discord.Embed(
+                title="🎮 Game Finished!",
+                description="🏁 **Final Results**",
+                color=0x00ff88
+            )
+            
+            for i, (user_id, score) in enumerate(sorted_players[:5]):
+                try:
+                    user = await self.fetch_user(int(user_id))
+                    rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+                    embed.add_field(
+                        name=f"{rank_emoji} {user.display_name}",
+                        value=f"🎯 {score} points",
+                        inline=True
+                    )
+                except:
+                    continue
+            
+            embed.set_footer(text="Great game everyone! Use ?leaderboard to see all-time scores")
+            await message.channel.send(embed=embed)
+        
+        # Clean up game data
+        del self.active_games[guild_id]
         
     async def _check_raid_protection(self, member):
         """Check for mass join attacks"""
@@ -729,6 +862,308 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
+    
+    # Utility Commands
+    @bot.command(name='help')
+    async def help_command(ctx):
+        """Show all available commands"""
+        embed = discord.Embed(
+            title="🤖 Master Security Bot Commands",
+            description="🛡️ **Complete command reference for server protection and fun**",
+            color=0x5865f2
+        )
+        
+        embed.add_field(
+            name="🛡️ Anti-Bot Protection",
+            value=(
+                "`?antispam` - Main protection settings\n"
+                "`?antispam config` - View current settings\n"
+                "`?antispam enable/disable` - Toggle protection\n"
+                "`?antispam stats` - View server statistics\n"
+                "`?antispam verification` - Toggle captcha system\n"
+                "`?antispam whitelist <user>` - Trust a user"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔨 Moderation Tools",
+            value=(
+                "`?kick <member> [reason]` - Remove member from server\n"
+                "`?ban <member> [reason]` - Permanently ban member\n"
+                "`?timeout <member> [duration]` - Temporarily mute member\n"
+                "`?quarantine <member>` - Isolate suspicious member"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎮 Fun & Games",
+            value=(
+                "`?games` - Start a trivia game\n"
+                "`?skip` - Skip current trivia question\n"
+                "`?stop` - End current game session\n"
+                "`?leaderboard` - View top players"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 Utility Commands",
+            value=(
+                "`?echo <message>` - Repeat your message\n"
+                "`?help` - Show this command list"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Use ?command for detailed help on specific commands")
+        await ctx.send(embed=embed)
+    
+    @bot.command(name='status')
+    async def status_command(ctx):
+        """Show bot status and system information"""
+        embed = discord.Embed(
+            title="🤖 Master Security Bot Status",
+            description="📊 **Current system status and information**",
+            color=0x5865f2,
+            timestamp=datetime.utcnow()
+        )
+        
+        # Bot info
+        embed.add_field(
+            name="🤖 Bot Information",
+            value=f"**Name:** {bot.user.name}\n**ID:** {bot.user.id}\n**Ping:** {round(bot.latency * 1000)}ms",
+            inline=True
+        )
+        
+        # Server stats
+        total_members = sum(guild.member_count for guild in bot.guilds if guild.member_count)
+        embed.add_field(
+            name="🏛️ Server Stats",
+            value=f"**Servers:** {len(bot.guilds)}\n**Total Members:** {total_members:,}\n**Active Games:** {len(bot.active_games)}",
+            inline=True
+        )
+        
+        # Protection status for this guild
+        config = bot.config_manager.get_guild_config(str(ctx.guild.id))
+        protection_status = "🟢 ACTIVE" if config['enabled'] else "🔴 DISABLED"
+        embed.add_field(
+            name="🛡️ Protection Status",
+            value=f"**Status:** {protection_status}\n**Verification:** {'🟢 ON' if config['verification']['enabled'] else '🔴 OFF'}",
+            inline=True
+        )
+        
+        embed.set_footer(text="All systems operational", icon_url=bot.user.display_avatar.url)
+        await ctx.send(embed=embed)
+    
+    @bot.command(name='echo')
+    async def echo_command(ctx, *, message):
+        """Repeat the user's message"""
+        embed = discord.Embed(
+            title="📢 Echo",
+            description=f"**{ctx.author.display_name} says:**\n{message}",
+            color=0x5865f2
+        )
+        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
+        await ctx.send(embed=embed)
+    
+    # Game Commands
+    @bot.command(name='games')
+    async def start_game(ctx):
+        """Start a trivia game"""
+        guild_id = str(ctx.guild.id)
+        
+        if guild_id in bot.active_games:
+            embed = discord.Embed(
+                title="🎮 Game Already Active",
+                description="A trivia game is already running in this server!\n\nUse `?stop` to end it or `?skip` to skip the current question.",
+                color=0xffa500
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Start new trivia game
+        questions = [
+            {"question": "What is the capital of France?", "answer": "paris", "options": ["London", "Berlin", "Paris", "Madrid"]},
+            {"question": "What is 2 + 2?", "answer": "4", "options": ["3", "4", "5", "6"]},
+            {"question": "Which planet is closest to the Sun?", "answer": "mercury", "options": ["Venus", "Mercury", "Earth", "Mars"]},
+            {"question": "What year was Discord founded?", "answer": "2015", "options": ["2014", "2015", "2016", "2017"]},
+            {"question": "What does 'HTTP' stand for?", "answer": "hypertext transfer protocol", "options": ["HyperText Transfer Protocol", "High Tech Transfer Protocol", "Home Transfer Protocol", "HTML Transfer Protocol"]}
+        ]
+        
+        import random
+        current_question = random.choice(questions)
+        
+        bot.active_games[guild_id] = {
+            'questions': questions,
+            'current_question': current_question,
+            'question_number': 1,
+            'players': {},
+            'start_time': datetime.utcnow()
+        }
+        
+        embed = discord.Embed(
+            title="🎮 Trivia Game Started!",
+            description="🧠 **Test your knowledge**\n\nAnswer questions to earn points!",
+            color=0x00ff88
+        )
+        embed.add_field(
+            name="📊 Question 1",
+            value=f"**{current_question['question']}**\n\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_question['options'])]),
+            inline=False
+        )
+        embed.add_field(
+            name="🎯 How to Play",
+            value="Type the number (1-4) or the full answer!\nFirst correct answer gets points!",
+            inline=False
+        )
+        embed.set_footer(text="Use ?skip to skip • ?stop to end game")
+        
+        await ctx.send(embed=embed)
+    
+    @bot.command(name='skip')
+    async def skip_question(ctx):
+        """Skip the current trivia question"""
+        guild_id = str(ctx.guild.id)
+        
+        if guild_id not in bot.active_games:
+            embed = discord.Embed(
+                title="❌ No Active Game",
+                description="No trivia game is currently running.\n\nUse `?games` to start a new game!",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Skip to next question or end game
+        game = bot.active_games[guild_id]
+        game['question_number'] += 1
+        
+        if game['question_number'] > 5:  # End after 5 questions
+            await _end_game(ctx, guild_id)
+            return
+        
+        # Next question
+        import random
+        current_question = random.choice(game['questions'])
+        game['current_question'] = current_question
+        
+        embed = discord.Embed(
+            title="⏭️ Question Skipped",
+            description=f"🧠 **Question {game['question_number']}/5**",
+            color=0x5865f2
+        )
+        embed.add_field(
+            name="📊 New Question",
+            value=f"**{current_question['question']}**\n\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_question['options'])]),
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+    
+    @bot.command(name='stop')
+    async def stop_game(ctx):
+        """Stop the current trivia game"""
+        guild_id = str(ctx.guild.id)
+        
+        if guild_id not in bot.active_games:
+            embed = discord.Embed(
+                title="❌ No Active Game",
+                description="No trivia game is currently running.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        await _end_game(ctx, guild_id)
+    
+    @bot.command(name='leaderboard')
+    async def show_leaderboard(ctx):
+        """Show trivia game leaderboard"""
+        guild_id = str(ctx.guild.id)
+        
+        if guild_id not in bot.leaderboard or not bot.leaderboard[guild_id]:
+            embed = discord.Embed(
+                title="📈 Trivia Leaderboard",
+                description="No scores recorded yet!\n\nPlay some trivia games with `?games` to get on the leaderboard!",
+                color=0x5865f2
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Sort players by score
+        sorted_players = sorted(bot.leaderboard[guild_id].items(), key=lambda x: x[1], reverse=True)
+        
+        embed = discord.Embed(
+            title="🏆 Trivia Leaderboard",
+            description="🧠 **Top trivia players in this server**",
+            color=0xffd700
+        )
+        
+        for i, (user_id, score) in enumerate(sorted_players[:10]):
+            try:
+                user = await bot.fetch_user(int(user_id))
+                rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+                embed.add_field(
+                    name=f"{rank_emoji} {user.display_name}",
+                    value=f"🎯 **{score} points**",
+                    inline=True
+                )
+            except:
+                continue
+        
+        embed.set_footer(text="Play ?games to climb the leaderboard!")
+        await ctx.send(embed=embed)
+    
+    async def _end_game(ctx, guild_id):
+        """End the trivia game and show results"""
+        game = bot.active_games[guild_id]
+        players = game['players']
+        
+        if not players:
+            embed = discord.Embed(
+                title="🎮 Game Ended",
+                description="Game finished with no players!",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+        else:
+            # Update leaderboard
+            if guild_id not in bot.leaderboard:
+                bot.leaderboard[guild_id] = {}
+            
+            for user_id, score in players.items():
+                if user_id not in bot.leaderboard[guild_id]:
+                    bot.leaderboard[guild_id][user_id] = 0
+                bot.leaderboard[guild_id][user_id] += score
+            
+            # Show final results
+            sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
+            
+            embed = discord.Embed(
+                title="🎮 Game Finished!",
+                description="🏁 **Final Results**",
+                color=0x00ff88
+            )
+            
+            for i, (user_id, score) in enumerate(sorted_players[:5]):
+                try:
+                    user = await bot.fetch_user(int(user_id))
+                    rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+                    embed.add_field(
+                        name=f"{rank_emoji} {user.display_name}",
+                        value=f"🎯 {score} points",
+                        inline=True
+                    )
+                except:
+                    continue
+            
+            embed.set_footer(text="Great game everyone! Use ?leaderboard to see all-time scores")
+            await ctx.send(embed=embed)
+        
+        # Clean up game data
+        del bot.active_games[guild_id]
     
     # Error handling
     @bot.event

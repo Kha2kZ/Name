@@ -9,6 +9,8 @@ import string
 from datetime import datetime, timedelta
 from typing import Optional
 from openai import OpenAI
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from config import ConfigManager
 from bot_detection import BotDetector
@@ -47,6 +49,10 @@ class AntiSpamBot(commands.Bot):
         # do not change this unless explicitly requested by the user
         self.openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         
+        # Database connection for persistent question tracking
+        self.db_connection = None
+        self._init_database()
+        
         # Track member joins for raid detection
         self.recent_joins = {}
         
@@ -56,6 +62,63 @@ class AntiSpamBot(commands.Bot):
         # Game system tracking
         self.active_games = {}
         self.leaderboard = {}
+        
+    def _init_database(self):
+        """Initialize database connection for persistent question tracking"""
+        try:
+            self.db_connection = psycopg2.connect(os.environ.get("DATABASE_URL"))
+            logger.info("Database connection established for question tracking")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            self.db_connection = None
+    
+    def _get_shown_questions(self, guild_id):
+        """Get all questions that have been shown to this guild"""
+        if not self.db_connection:
+            return set()
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT question_text FROM shown_questions WHERE guild_id = %s",
+                    (guild_id,)
+                )
+                results = cursor.fetchall()
+                return {row[0] for row in results}
+        except Exception as e:
+            logger.error(f"Error getting shown questions: {e}")
+            return set()
+    
+    def _mark_question_shown(self, guild_id, question_text):
+        """Mark a question as shown for this guild"""
+        if not self.db_connection:
+            return
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
+                    (guild_id, question_text)
+                )
+                self.db_connection.commit()
+        except Exception as e:
+            logger.error(f"Error marking question as shown: {e}")
+    
+    def _reset_question_history(self, guild_id):
+        """Reset question history for a guild (admin command)"""
+        if not self.db_connection:
+            return
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM shown_questions WHERE guild_id = %s",
+                    (guild_id,)
+                )
+                self.db_connection.commit()
+                logger.info(f"Reset question history for guild {guild_id}")
+        except Exception as e:
+            logger.error(f"Error resetting question history: {e}")
         
     async def translate_to_vietnamese(self, text):
         """Translate English text to Vietnamese"""
@@ -399,35 +462,18 @@ class AntiSpamBot(commands.Bot):
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
-                        # Reset shown questions to start fresh cycle
-                        logger.info("Resetting question pool for fresh cycle")
-                        game['shown_questions'].clear()
-                        available_questions = game['questions']
+                        # No available questions in current session, wait for new generation
+                        logger.info("No available questions in current session")
+                        await asyncio.sleep(5)  # Wait 5 seconds before trying again
+                        continue
                     
-                    if not available_questions:
-                        # If no questions available, generate one immediately
-                        logger.info("No questions available, generating one immediately")
-                        import random
-                        # Quick generation of Vietnam-focused math question in Vietnamese
-                        vietnam_math_questions = [
-                            ("Nếu Hà Nội có 8 triệu dân và TP.HCM có 9 triệu dân, tổng là bao nhiêu?", "17 triệu", "17 triệu"),
-                            ("Việt Nam có 63 tỉnh thành. Nếu 5 là thành phố trực thuộc TW, còn lại bao nhiêu tỉnh?", "58", "58"),
-                            ("Nếu tô phở giá 50.000 VNĐ và mua 3 tô, tổng tiền là bao nhiêu?", "150000", "150.000 VNĐ"),
-                            ("Nếu bánh mì 25.000 VNĐ và cà phê 15.000 VNĐ, tổng cộng là bao nhiêu?", "40000", "40.000 VNĐ")
-                        ]
-                        question_data = random.choice(vietnam_math_questions)
-                        current_question = {
-                            "question": question_data[0],
-                            "answer": question_data[1].lower(),
-                            "vietnamese_answer": question_data[2]
-                        }
-                    else:
-                        # Select from available_questions that passed the filter
-                        current_question = random.choice(available_questions)
-                        logger.info(f"Using available original question: {current_question['question']}")
+                    # Select from available_questions that passed the filter
+                    current_question = random.choice(available_questions)
+                    logger.info(f"Using available original question: {current_question['question']}")
                 
-                # Track that this question was shown and remove from original pool
+                # Track that this question was shown in memory and database
                 game['shown_questions'].add(current_question['question'])
+                self._mark_question_shown(guild_id, current_question['question'])
                 if current_question in game['questions']:
                     game['questions'].remove(current_question)
                 
@@ -587,14 +633,14 @@ class AntiSpamBot(commands.Bot):
                     new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
                     game['new_questions'].append(new_question)
                     game['shown_questions'].add(question)
+                    self._mark_question_shown(guild_id, question)
                     game['last_generation_time'] = datetime.utcnow()
                     
                     logger.info(f"Generated new QNA question ({category}): {question}")
                 else:
-                    # All questions used, reset the shown questions to start over
-                    logger.info("All questions used, resetting pool")
-                    game['shown_questions'].clear()
-                    # Don't generate this cycle, let the next cycle pick fresh questions
+                    # All questions used, but DON'T reset database - keep persistent history
+                    logger.info("All questions used, waiting for manual reset")
+                    # Don't generate this cycle, let admin reset if needed
                 
             except Exception as e:
                 logger.error(f"Error in QNA generation loop: {e}")
@@ -1341,8 +1387,17 @@ async def main():
             {"question": "Đồng tiền của Việt Nam là gì?", "answer": "dong", "vietnamese_answer": "Đồng Việt Nam"}
         ]
         
+        # Load persistent question history from database
+        shown_questions = bot._get_shown_questions(guild_id)
+        
+        # Select first question that hasn't been shown before
         import random
-        current_question = random.choice(questions)
+        available_starter_questions = [q for q in questions if q['question'] not in shown_questions]
+        if available_starter_questions:
+            current_question = random.choice(available_starter_questions)
+        else:
+            # All starter questions shown, pick any for now
+            current_question = random.choice(questions)
         
         bot.active_games[guild_id] = {
             'questions': questions,
@@ -1356,9 +1411,12 @@ async def main():
             'last_generation_time': datetime.utcnow(),
             'question_answered': False,
             'question_start_time': datetime.utcnow(),
-            'shown_questions': {current_question['question']},  # Track first question
+            'shown_questions': shown_questions,  # Load from database
             'new_questions': []
         }
+        
+        # Mark the first question as shown in database
+        bot._mark_question_shown(guild_id, current_question['question'])
         
         embed = discord.Embed(
             title="🤔 Thử thách QNA đã kích hoạt!",
@@ -1524,6 +1582,20 @@ async def main():
         
         # Clean up game data
         del bot.active_games[guild_id]
+
+    @bot.command(name='reset_questions')
+    @commands.has_permissions(administrator=True)
+    async def reset_questions(ctx):
+        """Reset question history for the server (Admin only)"""
+        guild_id = str(ctx.guild.id)
+        bot._reset_question_history(guild_id)
+        
+        embed = discord.Embed(
+            title="🔄 Lịch sử câu hỏi đã được reset",
+            description="Tất cả câu hỏi có thể được hỏi lại từ đầu.\n\nNgười chơi sẽ gặp các câu hỏi đã hỏi trước đó trong phiên chơi mới.",
+            color=0x00ff88
+        )
+        await ctx.send(embed=embed)
     
     # Error handling
     @bot.event

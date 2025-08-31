@@ -770,7 +770,7 @@ async def main():
         """Show detection statistics"""
         # Use monitor to generate stats embed
         embed = await bot.monitor.generate_stats_embed(str(ctx.guild.id))
-        embed.set_footer(text=f"AntiBot Protection • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+        embed.set_footer(text=f"AntiBot Protection • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         await ctx.send(embed=embed)
     
     # Basic moderation commands
@@ -933,7 +933,7 @@ async def main():
         # Bot info
         embed.add_field(
             name="🤖 Bot Information",
-            value=f"**Name:** {bot.user.name}\n**ID:** {bot.user.id}\n**Ping:** {round(bot.latency * 1000)}ms",
+            value=f"**Name:** {bot.user.name if bot.user else 'Unknown'}\n**ID:** {bot.user.id if bot.user else 'Unknown'}\n**Ping:** {round(bot.latency * 1000)}ms",
             inline=True
         )
         
@@ -954,7 +954,7 @@ async def main():
             inline=True
         )
         
-        embed.set_footer(text="All systems operational", icon_url=bot.user.display_avatar.url)
+        embed.set_footer(text="All systems operational", icon_url=bot.user.display_avatar.url if bot.user and bot.user.display_avatar else None)
         await ctx.send(embed=embed)
     
     @bot.command(name='echo')

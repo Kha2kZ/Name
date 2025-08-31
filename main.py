@@ -161,6 +161,9 @@ class AntiSpamBot(commands.Bot):
             is_correct = True
         
         if is_correct:
+            # Mark question as answered
+            game['question_answered'] = True
+            
             # Award points
             if user_id not in game['players']:
                 game['players'][user_id] = 0
@@ -234,21 +237,54 @@ class AntiSpamBot(commands.Bot):
         del self.active_games[guild_id]
     
     async def _qna_question_loop(self, guild_id):
-        """Continuously show new questions every 5 seconds"""
+        """Continuously show new questions every 5 seconds with 30s timeout"""
         import random
         
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
-                await asyncio.sleep(5)  # 5 second cooldown
+                # Wait for either answer or timeout
+                game = self.active_games[guild_id]
+                timeout_occurred = False
+                
+                # Check for 30-second timeout on current question
+                if not game['question_answered']:
+                    time_elapsed = (datetime.utcnow() - game['question_start_time']).total_seconds()
+                    if time_elapsed >= 30:
+                        timeout_occurred = True
+                        
+                        # Show correct answer due to timeout
+                        embed = discord.Embed(
+                            title="⏰ Time's Up!",
+                            description="Nobody got it right in 30 seconds!",
+                            color=0xffa500
+                        )
+                        embed.add_field(
+                            name="✅ Correct Answer",
+                            value=f"**{game['current_question']['answer'].title()}**",
+                            inline=False
+                        )
+                        embed.set_footer(text="Better luck with the next question!")
+                        
+                        await game['channel'].send(embed=embed)
+                
+                # Wait 5 seconds or until question is answered
+                if not game['question_answered'] and not timeout_occurred:
+                    await asyncio.sleep(5)
+                    continue
+                
+                # Reset for new question
+                await asyncio.sleep(3)  # Brief pause after answer/timeout
                 
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
                     
-                game = self.active_games[guild_id]
+                # Show new question
                 current_question = random.choice(game['questions'])
                 game['current_question'] = current_question
                 game['question_number'] += 1
                 game['last_question_time'] = datetime.utcnow()
+                game['question_answered'] = False
+                game['question_start_time'] = datetime.utcnow()
                 
                 embed = discord.Embed(
                     title="🤔 Next Question",
@@ -260,7 +296,7 @@ class AntiSpamBot(commands.Bot):
                     value=f"**{current_question['question']}**",
                     inline=False
                 )
-                embed.set_footer(text="Answer directly in chat • Use ?stop to end QNA")
+                embed.set_footer(text="Answer directly in chat • Use ?stop to end • ?skip if stuck")
                 
                 await game['channel'].send(embed=embed)
                 
@@ -1084,7 +1120,9 @@ async def main():
             'running': True,
             'channel': ctx.channel,
             'last_question_time': datetime.utcnow(),
-            'last_generation_time': datetime.utcnow()
+            'last_generation_time': datetime.utcnow(),
+            'question_answered': False,
+            'question_start_time': datetime.utcnow()
         }
         
         embed = discord.Embed(
@@ -1102,7 +1140,7 @@ async def main():
             value="**📝 Answer Format:** Type your answer directly\n**⚡ Speed Bonus:** First correct answer wins!\n**🏆 Rewards:** 10 points per correct answer\n**⏱️ Questions:** New question every 5 seconds",
             inline=False
         )
-        embed.set_footer(text="✨ Use ?stop to end QNA session • Answer continuously!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
+        embed.set_footer(text="✨ Use ?stop to end QNA session • ?skip if stuck • Answer continuously!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         
         await ctx.send(embed=embed)
         
@@ -1127,6 +1165,40 @@ async def main():
         # Stop the continuous loops
         bot.active_games[guild_id]['running'] = False
         await _end_game(ctx, guild_id)
+    
+    @bot.command(name='skip')
+    async def skip_question(ctx):
+        """Skip the current QNA question"""
+        guild_id = str(ctx.guild.id)
+        
+        if guild_id not in bot.active_games:
+            embed = discord.Embed(
+                title="❌ No Active QNA",
+                description="No QNA game is currently running.\n\nUse `?qna` to start a new session!",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        game = bot.active_games[guild_id]
+        
+        # Show correct answer before skipping
+        embed = discord.Embed(
+            title="⏭️ Question Skipped",
+            description="Moving to the next question!",
+            color=0xffa500
+        )
+        embed.add_field(
+            name="✅ Correct Answer",
+            value=f"**{game['current_question']['answer'].title()}**",
+            inline=False
+        )
+        embed.set_footer(text="Next question coming up...")
+        
+        await ctx.send(embed=embed)
+        
+        # Mark as answered to trigger next question
+        game['question_answered'] = True
     
     @bot.command(name='leaderboard')
     async def show_leaderboard(ctx):

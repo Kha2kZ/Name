@@ -350,19 +350,41 @@ class AntiSpamBot(commands.Bot):
                         import random
                         # Quick generation of Vietnam-focused math question in Vietnamese
                         vietnam_math_questions = [
-                            ("Nếu Hà Nội có 8 triệu dân và TP.HCM có 9 triệu dân, tổng là bao nhiêu?", "17 triệu"),
-                            ("Việt Nam có 63 tỉnh thành. Nếu 5 là thành phố trực thuộc TW, còn lại bao nhiêu tỉnh?", "58"),
-                            ("Nếu tô phở giá 50.000 VNĐ và mua 3 tô, tổng tiền là bao nhiêu?", "150000"),
-                            ("Nếu bánh mì 25.000 VNĐ và cà phê 15.000 VNĐ, tổng cộng là bao nhiêu?", "40000")
+                            ("Nếu Hà Nội có 8 triệu dân và TP.HCM có 9 triệu dân, tổng là bao nhiêu?", "17 triệu", "17 triệu"),
+                            ("Việt Nam có 63 tỉnh thành. Nếu 5 là thành phố trực thuộc TW, còn lại bao nhiêu tỉnh?", "58", "58"),
+                            ("Nếu tô phở giá 50.000 VNĐ và mua 3 tô, tổng tiền là bao nhiêu?", "150000", "150.000 VNĐ"),
+                            ("Nếu bánh mì 25.000 VNĐ và cà phê 15.000 VNĐ, tổng cộng là bao nhiêu?", "40000", "40.000 VNĐ")
                         ]
                         question_data = random.choice(vietnam_math_questions)
                         current_question = {
                             "question": question_data[0],
-                            "answer": question_data[1].lower()
+                            "answer": question_data[1].lower(),
+                            "vietnamese_answer": question_data[2]
                         }
                     else:
-                        current_question = random.choice(available_questions)
-                        logger.info(f"Using original question: {current_question['question']}")
+                        # If no questions available, prioritize Vietnamese questions from the database
+                        import random
+                        vietnam_questions = {
+                            "geography": [
+                                ("Núi cao nhất Việt Nam là gì?", "fansipan", "Fansipan"),
+                                ("Sông nào dài nhất ở Việt Nam?", "mekong", "Sông Mê Kông"),
+                                ("Đảo lớn nhất của Việt Nam là đảo nào?", "phu quoc", "Phú Quốc")
+                            ],
+                            "history": [
+                                ("Việt Nam thống nhất vào năm nào?", "1975", "1975"),
+                                ("Tổng thống đầu tiên của Việt Nam là ai?", "ho chi minh", "Hồ Chí Minh"),
+                                ("Trận Điện Biên Phủ diễn ra vào năm nào?", "1954", "1954")
+                            ]
+                        }
+                        category = random.choice(list(vietnam_questions.keys()))
+                        question_data = random.choice(vietnam_questions[category])
+                        question, answer, vietnamese_answer = question_data
+                        current_question = {
+                            "question": question,
+                            "answer": answer.lower(),
+                            "vietnamese_answer": vietnamese_answer
+                        }
+                        logger.info(f"Using backup Vietnamese question: {current_question['question']}")
                 
                 # Track that this question was shown and remove from original pool
                 game['shown_questions'].add(current_question['question'])

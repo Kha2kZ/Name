@@ -141,7 +141,7 @@ class AntiSpamBot(commands.Bot):
         logger.info(f"Member left {member.guild.name}: {member} ({member.id})")
     
     async def _check_trivia_answer(self, message):
-        """Check if message is a trivia game answer"""
+        """Check if message is a QNA game answer"""
         guild_id = str(message.guild.id)
         
         if guild_id not in self.active_games:
@@ -155,18 +155,9 @@ class AntiSpamBot(commands.Bot):
         user_answer = message.content.lower().strip()
         correct_answer = current_question['answer'].lower()
         
-        # Check if it's a number answer (1-4)
+        # Check if answer matches (flexible matching)
         is_correct = False
-        if user_answer.isdigit():
-            try:
-                answer_index = int(user_answer) - 1
-                if 0 <= answer_index < len(current_question['options']):
-                    selected_option = current_question['options'][answer_index].lower()
-                    if correct_answer in selected_option:
-                        is_correct = True
-            except:
-                pass
-        elif correct_answer in user_answer or user_answer in correct_answer:
+        if correct_answer == user_answer or correct_answer in user_answer or user_answer in correct_answer:
             is_correct = True
         
         if is_correct:
@@ -192,30 +183,6 @@ class AntiSpamBot(commands.Bot):
             )
             
             await message.channel.send(embed=embed)
-            
-            # Move to next question
-            game['question_number'] += 1
-            if game['question_number'] > 5:
-                await self._end_game_from_message(message, guild_id)
-            else:
-                # Next question after a delay
-                await asyncio.sleep(2)
-                import random
-                current_question = random.choice(game['questions'])
-                game['current_question'] = current_question
-                
-                embed = discord.Embed(
-                    title="📊 Next Question",
-                    description=f"🧠 **Question {game['question_number']}/5**",
-                    color=0x5865f2
-                )
-                embed.add_field(
-                    name="❓ Question",
-                    value=f"**{current_question['question']}**\n\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_question['options'])]),
-                    inline=False
-                )
-                
-                await message.channel.send(embed=embed)
         
     async def _end_game_from_message(self, message, guild_id):
         """End game from message context"""
@@ -265,6 +232,104 @@ class AntiSpamBot(commands.Bot):
         
         # Clean up game data
         del self.active_games[guild_id]
+    
+    async def _qna_question_loop(self, guild_id):
+        """Continuously show new questions every 5 seconds"""
+        import random
+        
+        while guild_id in self.active_games and self.active_games[guild_id]['running']:
+            try:
+                await asyncio.sleep(5)  # 5 second cooldown
+                
+                if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
+                    break
+                    
+                game = self.active_games[guild_id]
+                current_question = random.choice(game['questions'])
+                game['current_question'] = current_question
+                game['question_number'] += 1
+                game['last_question_time'] = datetime.utcnow()
+                
+                embed = discord.Embed(
+                    title="🤔 Next Question",
+                    description=f"**Question #{game['question_number']}**",
+                    color=0x5865f2
+                )
+                embed.add_field(
+                    name="❓ Question",
+                    value=f"**{current_question['question']}**",
+                    inline=False
+                )
+                embed.set_footer(text="Answer directly in chat • Use ?stop to end QNA")
+                
+                await game['channel'].send(embed=embed)
+                
+            except Exception as e:
+                logger.error(f"Error in QNA question loop: {e}")
+                break
+    
+    async def _qna_generation_loop(self, guild_id):
+        """Generate new questions every 30 seconds"""
+        import random
+        
+        question_templates = [
+            ("What is the capital of {country}?", "geography"),
+            ("What is {num1} + {num2}?", "math"),
+            ("In what year was {event}?", "history"),
+            ("What does {acronym} stand for?", "technology"),
+            ("Who wrote {book}?", "literature"),
+            ("What is the largest {category}?", "general"),
+            ("How many {unit} are in a {larger_unit}?", "conversion")
+        ]
+        
+        geography_data = [
+            ("Japan", "tokyo"), ("Germany", "berlin"), ("Italy", "rome"), 
+            ("Spain", "madrid"), ("Canada", "ottawa"), ("Australia", "canberra"),
+            ("Brazil", "brasilia"), ("India", "new delhi")
+        ]
+        
+        events_data = [
+            ("World Wide Web invented", "1991"), ("Google founded", "1998"),
+            ("YouTube launched", "2005"), ("iPhone released", "2007"),
+            ("Bitcoin created", "2009"), ("Instagram launched", "2010")
+        ]
+        
+        while guild_id in self.active_games and self.active_games[guild_id]['running']:
+            try:
+                await asyncio.sleep(30)  # Generate new question every 30 seconds
+                
+                if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
+                    break
+                
+                game = self.active_games[guild_id]
+                template = random.choice(question_templates)
+                
+                # Generate question based on template
+                if template[1] == "geography":
+                    country, capital = random.choice(geography_data)
+                    question = template[0].format(country=country)
+                    answer = capital
+                elif template[1] == "math":
+                    num1, num2 = random.randint(1, 50), random.randint(1, 50)
+                    question = template[0].format(num1=num1, num2=num2)
+                    answer = str(num1 + num2)
+                elif template[1] == "history":
+                    event, year = random.choice(events_data)
+                    question = template[0].format(event=event)
+                    answer = year
+                else:
+                    continue  # Skip other templates for now
+                
+                # Add to questions pool
+                new_question = {"question": question, "answer": answer.lower()}
+                game['questions'].append(new_question)
+                game['last_generation_time'] = datetime.utcnow()
+                
+                logger.info(f"Generated new QNA question: {question}")
+                
+            except Exception as e:
+                logger.error(f"Error in QNA generation loop: {e}")
+                break
         
     async def _check_raid_protection(self, member):
         """Check for mass join attacks"""
@@ -984,27 +1049,27 @@ async def main():
         await ctx.send(embed=embed)
     
     # Game Commands
-    @bot.command(name='games')
+    @bot.command(name='qna')
     async def start_game(ctx):
-        """Start a trivia game"""
+        """Start a QNA game"""
         guild_id = str(ctx.guild.id)
         
         if guild_id in bot.active_games:
             embed = discord.Embed(
-                title="🎮 Game Already Active",
-                description="A trivia game is already running in this server!\n\nUse `?stop` to end it or `?skip` to skip the current question.",
+                title="🎮 QNA Already Active",
+                description="A QNA game is already running in this server!\n\nUse `?stop` to end it.",
                 color=0xffa500
             )
             await ctx.send(embed=embed)
             return
         
-        # Start new trivia game
+        # Start new QNA game
         questions = [
-            {"question": "What is the capital of France?", "answer": "paris", "options": ["London", "Berlin", "Paris", "Madrid"]},
-            {"question": "What is 2 + 2?", "answer": "4", "options": ["3", "4", "5", "6"]},
-            {"question": "Which planet is closest to the Sun?", "answer": "mercury", "options": ["Venus", "Mercury", "Earth", "Mars"]},
-            {"question": "What year was Discord founded?", "answer": "2015", "options": ["2014", "2015", "2016", "2017"]},
-            {"question": "What does 'HTTP' stand for?", "answer": "hypertext transfer protocol", "options": ["HyperText Transfer Protocol", "High Tech Transfer Protocol", "Home Transfer Protocol", "HTML Transfer Protocol"]}
+            {"question": "What is the capital of France?", "answer": "paris"},
+            {"question": "What is 2 + 2?", "answer": "4"},
+            {"question": "Which planet is closest to the Sun?", "answer": "mercury"},
+            {"question": "What year was Discord founded?", "answer": "2015"},
+            {"question": "What does 'HTTP' stand for?", "answer": "hypertext transfer protocol"}
         ]
         
         import random
@@ -1015,94 +1080,63 @@ async def main():
             'current_question': current_question,
             'question_number': 1,
             'players': {},
-            'start_time': datetime.utcnow()
+            'start_time': datetime.utcnow(),
+            'running': True,
+            'channel': ctx.channel,
+            'last_question_time': datetime.utcnow(),
+            'last_generation_time': datetime.utcnow()
         }
         
         embed = discord.Embed(
-            title="🎮 Trivia Challenge Activated!",
-            description="**🧠 Knowledge Battle Arena**\n\n*Test your brain power and climb the leaderboard!*\n\n✨ **Ready to begin your intellectual journey?**",
+            title="🤔 QNA Challenge Activated!",
+            description="**🧠 Question & Answer Arena**\n\n*Test your knowledge with continuous questions!*\n\n✨ **Ready to begin your QNA session?**",
             color=0xff6b6b
         )
-        embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1234567890.png")
         embed.add_field(
-            name="🏆 Question 1 of 5",
-            value=f"**❓ {current_question['question']}**\n\n" + "\n".join([f"🔸 **{i+1}.** {opt}" for i, opt in enumerate(current_question['options'])]),
+            name="❓ Current Question",
+            value=f"**{current_question['question']}**",
             inline=False
         )
         embed.add_field(
             name="🎯 Game Rules",
-            value="**📝 Answer Format:** Type `1`, `2`, `3`, `4` or the full answer\n**⚡ Speed Bonus:** First correct answer wins!\n**🏆 Rewards:** 10 points per correct answer",
+            value="**📝 Answer Format:** Type your answer directly\n**⚡ Speed Bonus:** First correct answer wins!\n**🏆 Rewards:** 10 points per correct answer\n**⏱️ Questions:** New question every 5 seconds",
             inline=False
         )
-        embed.set_footer(text="✨ Use ?skip to skip question • ?stop to end game • Good luck!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
+        embed.set_footer(text="✨ Use ?stop to end QNA session • Answer continuously!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         
         await ctx.send(embed=embed)
-    
-    @bot.command(name='skip')
-    async def skip_question(ctx):
-        """Skip the current trivia question"""
-        guild_id = str(ctx.guild.id)
         
-        if guild_id not in bot.active_games:
-            embed = discord.Embed(
-                title="❌ No Active Game",
-                description="No trivia game is currently running.\n\nUse `?games` to start a new game!",
-                color=0xff4444
-            )
-            await ctx.send(embed=embed)
-            return
-        
-        # Skip to next question or end game
-        game = bot.active_games[guild_id]
-        game['question_number'] += 1
-        
-        if game['question_number'] > 5:  # End after 5 questions
-            await _end_game(ctx, guild_id)
-            return
-        
-        # Next question
-        import random
-        current_question = random.choice(game['questions'])
-        game['current_question'] = current_question
-        
-        embed = discord.Embed(
-            title="⏭️ Question Skipped",
-            description=f"🧠 **Question {game['question_number']}/5**",
-            color=0x5865f2
-        )
-        embed.add_field(
-            name="📊 New Question",
-            value=f"**{current_question['question']}**\n\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(current_question['options'])]),
-            inline=False
-        )
-        
-        await ctx.send(embed=embed)
+        # Start continuous question loop
+        asyncio.create_task(bot._qna_question_loop(guild_id))
+        asyncio.create_task(bot._qna_generation_loop(guild_id))
     
     @bot.command(name='stop')
     async def stop_game(ctx):
-        """Stop the current trivia game"""
+        """Stop the current QNA game"""
         guild_id = str(ctx.guild.id)
         
         if guild_id not in bot.active_games:
             embed = discord.Embed(
-                title="❌ No Active Game",
-                description="No trivia game is currently running.",
+                title="❌ No Active QNA",
+                description="No QNA game is currently running.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
             return
         
+        # Stop the continuous loops
+        bot.active_games[guild_id]['running'] = False
         await _end_game(ctx, guild_id)
     
     @bot.command(name='leaderboard')
     async def show_leaderboard(ctx):
-        """Show trivia game leaderboard"""
+        """Show QNA game leaderboard"""
         guild_id = str(ctx.guild.id)
         
         if guild_id not in bot.leaderboard or not bot.leaderboard[guild_id]:
             embed = discord.Embed(
-                title="📈 Trivia Leaderboard",
-                description="No scores recorded yet!\n\nPlay some trivia games with `?games` to get on the leaderboard!",
+                title="📈 QNA Leaderboard",
+                description="No scores recorded yet!\n\nPlay some QNA games with `?qna` to get on the leaderboard!",
                 color=0x5865f2
             )
             await ctx.send(embed=embed)
@@ -1112,8 +1146,8 @@ async def main():
         sorted_players = sorted(bot.leaderboard[guild_id].items(), key=lambda x: x[1], reverse=True)
         
         embed = discord.Embed(
-            title="🏆 Trivia Leaderboard",
-            description="🧠 **Top trivia players in this server**",
+            title="🏆 QNA Leaderboard",
+            description="🧠 **Top QNA players in this server**",
             color=0xffd700
         )
         
@@ -1129,18 +1163,21 @@ async def main():
             except:
                 continue
         
-        embed.set_footer(text="Play ?games to climb the leaderboard!")
+        embed.set_footer(text="Play ?qna to climb the leaderboard!")
         await ctx.send(embed=embed)
     
     async def _end_game(ctx, guild_id):
-        """End the trivia game and show results"""
+        """End the QNA game and show results"""
         game = bot.active_games[guild_id]
         players = game['players']
         
+        # Stop the continuous loops
+        game['running'] = False
+        
         if not players:
             embed = discord.Embed(
-                title="🎮 Game Ended",
-                description="Game finished with no players!",
+                title="🎮 QNA Ended",
+                description="QNA session finished with no players!",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -1158,7 +1195,7 @@ async def main():
             sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
             
             embed = discord.Embed(
-                title="🎮 Game Finished!",
+                title="🎮 QNA Session Finished!",
                 description="🏁 **Final Results**",
                 color=0x00ff88
             )
@@ -1175,7 +1212,7 @@ async def main():
                 except:
                     continue
             
-            embed.set_footer(text="Great game everyone! Use ?leaderboard to see all-time scores")
+            embed.set_footer(text="Great session everyone! Use ?leaderboard to see all-time scores")
             await ctx.send(embed=embed)
         
         # Clean up game data

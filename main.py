@@ -279,26 +279,25 @@ class AntiSpamBot(commands.Bot):
                     break
                     
                 # Select next question (prioritize new questions, avoid repeats)
-                available_questions = []
+                current_question = None
                 
                 # First, try new generated questions
                 if game['new_questions']:
-                    available_questions = game['new_questions']
-                    current_question = random.choice(available_questions)
+                    current_question = random.choice(game['new_questions'])
                     game['new_questions'].remove(current_question)
                 else:
                     # Use original questions, but avoid already shown ones
-                    available_questions = [q for q in game['questions'] if q not in game['shown_questions']]
+                    available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
                     
                     if not available_questions:
                         # If all questions shown, reset and use all questions again
                         available_questions = game['questions']
-                        game['shown_questions'] = []
+                        game['shown_questions'] = set()
                     
                     current_question = random.choice(available_questions)
                 
                 # Track that this question was shown
-                game['shown_questions'].append(current_question)
+                game['shown_questions'].add(current_question['question'])
                 game['current_question'] = current_question
                 game['question_number'] += 1
                 game['last_question_time'] = datetime.utcnow()
@@ -1142,7 +1141,7 @@ async def main():
             'last_generation_time': datetime.utcnow(),
             'question_answered': False,
             'question_start_time': datetime.utcnow(),
-            'shown_questions': [current_question],
+            'shown_questions': {current_question['question']},
             'new_questions': []
         }
         

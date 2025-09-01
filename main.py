@@ -1731,7 +1731,7 @@ async def main():
 
     # Social Interaction Commands
     @bot.command(name='kiss')
-    async def kiss_command(ctx, member: discord.Member = None):
+    async def kiss_command(ctx, member: Optional[discord.Member] = None):
         """Kiss someone 💋"""
         if member is None:
             embed = discord.Embed(
@@ -1776,7 +1776,7 @@ async def main():
         await ctx.send(embed=embed)
 
     @bot.command(name='hug')
-    async def hug_command(ctx, member: discord.Member = None):
+    async def hug_command(ctx, member: Optional[discord.Member] = None):
         """Hug someone 🤗"""
         if member is None:
             embed = discord.Embed(
@@ -1821,7 +1821,7 @@ async def main():
         await ctx.send(embed=embed)
 
     @bot.command(name='hs')
-    async def handshake_command(ctx, member: discord.Member = None):
+    async def handshake_command(ctx, member: Optional[discord.Member] = None):
         """Handshake with someone 🤝"""
         if member is None:
             embed = discord.Embed(

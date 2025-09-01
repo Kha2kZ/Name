@@ -1434,6 +1434,18 @@ async def main():
         )
         
         embed.add_field(
+            name="💖 Social Interactions",
+            value=(
+                "```css\n"
+                "?kiss @user       → Kiss someone 💋\n"
+                "?hug @user        → Hug someone 🤗\n"
+                "?hs @user         → Handshake with someone 🤝\n"
+                "```"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
             name="🔧 Utility Tools",
             value=(
                 "```css\n"
@@ -1716,6 +1728,142 @@ async def main():
         
         # Clean up game data
         del bot.active_games[guild_id]
+
+    # Social Interaction Commands
+    @bot.command(name='kiss')
+    async def kiss_command(ctx, member: discord.Member = None):
+        """Kiss someone 💋"""
+        if member is None:
+            embed = discord.Embed(
+                title="💋 Lệnh Kiss",
+                description="Hãy chọn một người để hôn!\n\nSử dụng: `?kiss @người_nào_đó`",
+                color=0xff69b4
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if member == ctx.author:
+            embed = discord.Embed(
+                title="💋 Tự hôn mình?",
+                description="Bạn không thể tự hôn chính mình! Hãy tìm ai đó khác 😉",
+                color=0xff69b4
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Random kiss GIFs
+        kiss_gifs = [
+            "https://media.tenor.com/S_1GHG4t-WIAAAAM/anime-kiss.gif",
+            "https://media.tenor.com/x8v1oNUOmg4AAAAM/kiss.gif",
+            "https://media.tenor.com/gUiu1zyxfzYAAAAM/anime-kiss.gif",
+            "https://media.tenor.com/NXrX7M_oJbcAAAAM/kawaii-kiss.gif",
+            "https://media.tenor.com/VJO_7oGLsqYAAAAM/kiss-anime.gif",
+            "https://media.tenor.com/UGZpGP_Iz2YAAAAM/kiss-love.gif",
+            "https://media.tenor.com/mPjt3HbBN-8AAAAM/anime-kiss.gif",
+            "https://media.tenor.com/JRp8SH9qJVMAAAAM/anime-kiss.gif"
+        ]
+        
+        selected_gif = random.choice(kiss_gifs)
+        
+        embed = discord.Embed(
+            title="💋 Kiss!",
+            description=f"**{ctx.author.mention}** đã hôn vào môi của **{member.mention}**! 💕",
+            color=0xff69b4
+        )
+        embed.set_image(url=selected_gif)
+        embed.set_footer(text="Thật ngọt ngào! 💖")
+        
+        await ctx.send(embed=embed)
+
+    @bot.command(name='hug')
+    async def hug_command(ctx, member: discord.Member = None):
+        """Hug someone 🤗"""
+        if member is None:
+            embed = discord.Embed(
+                title="🤗 Lệnh Hug",
+                description="Hãy chọn một người để ôm!\n\nSử dụng: `?hug @người_nào_đó`",
+                color=0xffa500
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if member == ctx.author:
+            embed = discord.Embed(
+                title="🤗 Tự ôm mình?",
+                description="Bạn đang cần một cái ôm thật sự từ ai đó! 💙",
+                color=0xffa500
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Random hug GIFs
+        hug_gifs = [
+            "https://media.tenor.com/gOTs2p6IjqcAAAAM/hug-anime.gif",
+            "https://media.tenor.com/BPk5nqLMzJkAAAAM/anime-hug.gif",
+            "https://media.tenor.com/PGCqg_l_wOkAAAAM/hug-cuddle.gif",
+            "https://media.tenor.com/KFSaZ1FohcYAAAAM/anime-hug.gif",
+            "https://media.tenor.com/OLbsEBb8sSAAAAAM/anime-cute.gif",
+            "https://media.tenor.com/X2rdJ-kBwuYAAAAM/hug-anime.gif",
+            "https://media.tenor.com/un9TdGNJMy8AAAAM/anime-hug.gif",
+            "https://media.tenor.com/_rdSwgJCzRkAAAAM/hug-anime.gif"
+        ]
+        
+        selected_gif = random.choice(hug_gifs)
+        
+        embed = discord.Embed(
+            title="🤗 Hug!",
+            description=f"**{ctx.author.mention}** đã ôm chặt **{member.mention}**! 💙",
+            color=0xffa500
+        )
+        embed.set_image(url=selected_gif)
+        embed.set_footer(text="Ấm áp và dễ thương! 🥰")
+        
+        await ctx.send(embed=embed)
+
+    @bot.command(name='hs')
+    async def handshake_command(ctx, member: discord.Member = None):
+        """Handshake with someone 🤝"""
+        if member is None:
+            embed = discord.Embed(
+                title="🤝 Lệnh Handshake",
+                description="Hãy chọn một người để bắt tay!\n\nSử dụng: `?hs @người_nào_đó`",
+                color=0x5865f2
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if member == ctx.author:
+            embed = discord.Embed(
+                title="🤝 Tự bắt tay?",
+                description="Bạn không thể bắt tay với chính mình! Hãy tìm bạn bè 😄",
+                color=0x5865f2
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Random handshake GIFs
+        handshake_gifs = [
+            "https://media.tenor.com/ymN_FUny2CYAAAAM/handshake-deal.gif",
+            "https://media.tenor.com/EHTrPq0WuLQAAAAM/handshake-anime.gif",
+            "https://media.tenor.com/mfBwBEUdAFsAAAAM/anime-handshake.gif",
+            "https://media.tenor.com/DYJ2sNZQBkIAAAAM/handshake-shake-hands.gif",
+            "https://media.tenor.com/QTyKUQXYqXcAAAAM/anime-handshake.gif",
+            "https://media.tenor.com/LKIkwJMlAwUAAAAM/deal-handshake.gif",
+            "https://media.tenor.com/c_KzMTlCXHQAAAAM/friends-handshake.gif",
+            "https://media.tenor.com/Af0TbAv7ExAAAAAM/deal-shake-hands.gif"
+        ]
+        
+        selected_gif = random.choice(handshake_gifs)
+        
+        embed = discord.Embed(
+            title="🤝 Handshake!",
+            description=f"**{ctx.author.mention}** đã bắt tay với **{member.mention}**! 🤝",
+            color=0x5865f2
+        )
+        embed.set_image(url=selected_gif)
+        embed.set_footer(text="Tình bạn đẹp! 👫")
+        
+        await ctx.send(embed=embed)
 
     @bot.command(name='reset_questions')
     @commands.has_permissions(administrator=True)

@@ -1753,14 +1753,12 @@ async def main():
             
         # Random kiss GIFs
         kiss_gifs = [
-            "https://media.tenor.com/S_1GHG4t-WIAAAAM/anime-kiss.gif",
-            "https://media.tenor.com/x8v1oNUOmg4AAAAM/kiss.gif",
-            "https://media.tenor.com/gUiu1zyxfzYAAAAM/anime-kiss.gif",
-            "https://media.tenor.com/NXrX7M_oJbcAAAAM/kawaii-kiss.gif",
-            "https://media.tenor.com/VJO_7oGLsqYAAAAM/kiss-anime.gif",
-            "https://media.tenor.com/UGZpGP_Iz2YAAAAM/kiss-love.gif",
-            "https://media.tenor.com/mPjt3HbBN-8AAAAM/anime-kiss.gif",
-            "https://media.tenor.com/JRp8SH9qJVMAAAAM/anime-kiss.gif"
+            "https://media.tenor.com/_8oadF3hZwIAAAAM/kiss.gif",
+            "https://media.tenor.com/kmxEaVuW8AoAAAAM/kiss-gentle-kiss.gif",
+            "https://media.tenor.com/BZyWzw2d5tAAAAAM/hyakkano-100-girlfriends.gif",
+            "https://media.tenor.com/xYUjLVz6rJoAAAAM/mhel.gif",
+            "https://media.tenor.com/z0UhWlFiC1EAAAAm/flamez-ivo.webp",
+            "https://media.tenor.com/7kEaMuYWPYUAAAAm/haleys-ouo.webp"
         ]
         
         selected_gif = random.choice(kiss_gifs)
@@ -1798,14 +1796,14 @@ async def main():
             
         # Random hug GIFs
         hug_gifs = [
-            "https://media.tenor.com/gOTs2p6IjqcAAAAM/hug-anime.gif",
-            "https://media.tenor.com/BPk5nqLMzJkAAAAM/anime-hug.gif",
-            "https://media.tenor.com/PGCqg_l_wOkAAAAM/hug-cuddle.gif",
-            "https://media.tenor.com/KFSaZ1FohcYAAAAM/anime-hug.gif",
-            "https://media.tenor.com/OLbsEBb8sSAAAAAM/anime-cute.gif",
-            "https://media.tenor.com/X2rdJ-kBwuYAAAAM/hug-anime.gif",
-            "https://media.tenor.com/un9TdGNJMy8AAAAM/anime-hug.gif",
-            "https://media.tenor.com/_rdSwgJCzRkAAAAM/hug-anime.gif"
+            "https://media.tenor.com/9lRjN-Sr204AAAAm/anime-anime-hug.webp",
+            "https://media.tenor.com/P-8xYwXoGX0AAAAM/anime-hug-hugs.gif",
+            "https://media.tenor.com/G_IvONY8EFgAAAAM/aharen-san-anime-hug.gif",
+            "https://media.tenor.com/sGrFJCNL1_8AAAAM/anime-sevendeadlysins.gif",
+            "https://media.tenor.com/JusdVlKJLbsAAAAM/cute-anime.gif",
+            "https://media.tenor.com/W9Z5NRFZq_UAAAAM/excited-hug.gif",
+            "https://media.tenor.com/sl3rfZ7mQBsAAAAM/anime-hug-canary-princess.gif",
+            "https://media.tenor.com/JzxgF3aebL0AAAAM/hug-hugging.gif"
         ]
         
         selected_gif = random.choice(hug_gifs)
@@ -1843,14 +1841,12 @@ async def main():
             
         # Random handshake GIFs
         handshake_gifs = [
+            "https://media.tenor.com/RWD2XL_CxdcAAAAM/hug.gif",
+            "https://media.tenor.com/hqvisWep1eUAAAAm/ash-dawn-hug-anime-hug.webp",
+            "https://media.tenor.com/0770vFtv1xAAAAAm/heart-hug.webp",
             "https://media.tenor.com/ymN_FUny2CYAAAAM/handshake-deal.gif",
-            "https://media.tenor.com/EHTrPq0WuLQAAAAM/handshake-anime.gif",
-            "https://media.tenor.com/mfBwBEUdAFsAAAAM/anime-handshake.gif",
             "https://media.tenor.com/DYJ2sNZQBkIAAAAM/handshake-shake-hands.gif",
-            "https://media.tenor.com/QTyKUQXYqXcAAAAM/anime-handshake.gif",
-            "https://media.tenor.com/LKIkwJMlAwUAAAAM/deal-handshake.gif",
-            "https://media.tenor.com/c_KzMTlCXHQAAAAM/friends-handshake.gif",
-            "https://media.tenor.com/Af0TbAv7ExAAAAAM/deal-shake-hands.gif"
+            "https://media.tenor.com/c_KzMTlCXHQAAAAM/friends-handshake.gif"
         ]
         
         selected_gif = random.choice(handshake_gifs)
@@ -1915,10 +1911,36 @@ async def main():
         print("Please set the DISCORD_BOT_TOKEN environment variable")
         return
     
+    # Start bot with automatic restart capability
     try:
         await bot.start(token)
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
+        raise  # Re-raise to be caught by the restart wrapper
+
+async def start_bot_with_auto_restart():
+    """Main bot execution with auto-restart capability"""
+    restart_count = 0
+    max_restarts = 10
+    
+    while restart_count < max_restarts:
+        try:
+            logger.info(f"Starting bot system (attempt {restart_count + 1}/{max_restarts})")
+            await main()
+            break  # If main() completes normally, exit
+        except KeyboardInterrupt:
+            logger.info("Bot shutdown requested by user")
+            break
+        except Exception as e:
+            restart_count += 1
+            logger.error(f"Bot system crashed (attempt {restart_count}): {e}")
+            
+            if restart_count < max_restarts:
+                logger.info(f"Restarting bot system in 5 seconds... ({restart_count}/{max_restarts})")
+                await asyncio.sleep(5)
+            else:
+                logger.error("Maximum restart attempts reached. Bot will not restart automatically.")
+                break
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(start_bot_with_auto_restart())

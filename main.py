@@ -1463,7 +1463,7 @@ async def main():
                 "?kiss @user       → Kiss someone 💋\n"
                 "?hug @user        → Hug someone 🤗\n"
                 "?hs @user         → Handshake with someone 🤝\n"
-                "?f*ck @user       → Give middle finger 🖕\n"
+                "?f*ck @user       → Flip them off 🖕\n"
                 "```"
             ),
             inline=False

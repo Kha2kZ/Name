@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 import discord
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ class BotMonitor:
         for day in old_days[:10]:
             del self.stats['daily_stats'][day]
     
-    def record_detection(self, detection_type: str, guild_id: str, details: Dict = None):
+    def record_detection(self, detection_type: str, guild_id: str, details: Optional[Dict] = None):
         """Record a detection event"""
         now = datetime.utcnow()
         
@@ -183,7 +183,7 @@ class BotMonitor:
         
         logger.info(f"Detection recorded: {detection_type} in guild {guild_id}")
     
-    def record_action(self, action_type: str, guild_id: str, target_user: str, reason: str = None):
+    def record_action(self, action_type: str, guild_id: str, target_user: str, reason: Optional[str] = None):
         """Record a moderation action"""
         now = datetime.utcnow()
         
@@ -289,7 +289,7 @@ class BotMonitor:
             'api_calls': dict(self.api_calls)
         }
     
-    def get_recent_activity(self, limit: int = 50, activity_type: str = None) -> List[Dict]:
+    def get_recent_activity(self, limit: int = 50, activity_type: Optional[str] = None) -> List[Dict]:
         """Get recent activity events"""
         activities = list(self.recent_activity)
         
@@ -340,7 +340,7 @@ class BotMonitor:
         # you'd store the start time when the bot starts
         return 24.0  # Placeholder
     
-    def export_stats(self, filepath: str = None) -> str:
+    def export_stats(self, filepath: Optional[str] = None) -> Optional[str]:
         """Export all statistics to JSON file"""
         if filepath is None:
             timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
@@ -364,7 +364,7 @@ class BotMonitor:
             logger.error(f"Failed to export statistics: {e}")
             return None
     
-    async def generate_stats_embed(self, guild_id: str = None) -> discord.Embed:
+    async def generate_stats_embed(self, guild_id: Optional[str] = None) -> discord.Embed:
         """Generate a Discord embed with statistics"""
         if guild_id:
             # Guild-specific stats

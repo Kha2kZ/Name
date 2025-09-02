@@ -1516,6 +1516,12 @@ async def main():
             color=0x9966cc
         )
         embed.set_author(name=f"{ctx.author.display_name} says...", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
+        try:
+            await ctx.message.delete()  # Delete the user's original message to keep it secret
+        except discord.errors.NotFound:
+            pass  # Message was already deleted
+        except discord.errors.Forbidden:
+            pass  # Bot doesn't have permission to delete messages
         await ctx.send(message)
     
     # Game Commands

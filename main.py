@@ -549,7 +549,7 @@ class AntiSpamBot(commands.Bot):
                             await game['channel'].send(embed=embed)
                             game['waiting_message_sent'] = True
                         
-                        await asyncio.sleep(5)  # Shorter wait, no continue to avoid loop restart
+                        await asyncio.sleep(2)  # Shorter wait, no continue to avoid loop restart
                         continue
                     
                     # Select from available_questions that passed the filter
@@ -588,7 +588,7 @@ class AntiSpamBot(commands.Bot):
                 break
     
     async def _qna_generation_loop(self, guild_id):
-        """Generate new Vietnam-focused questions every 30 seconds"""
+        """Generate new Vietnam-focused questions every 2 seconds"""
         import random
         
         # Vietnam-focused question database (Vietnamese questions with English answers for matching)
@@ -692,7 +692,7 @@ class AntiSpamBot(commands.Bot):
         
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
-                await asyncio.sleep(5)  # Much faster generation - every 5 seconds
+                await asyncio.sleep(2)  # Much faster generation - every 2 seconds
                 
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
@@ -742,7 +742,7 @@ class AntiSpamBot(commands.Bot):
                 elif not available_new_questions:
                     # All questions used, but DON'T reset database - keep persistent history
                     logger.info("All questions used, waiting for manual reset")
-                    await asyncio.sleep(20)  # Wait longer when no questions available
+                    await asyncio.sleep(5)  # Faster wait when no questions available
                 
             except Exception as e:
                 logger.error(f"Error in QNA generation loop: {e}")

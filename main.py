@@ -1552,8 +1552,9 @@ async def main():
             await ctx.send(embed=embed)
             return
         
-        # Load persistent question history from database for better filtering
-        shown_questions = bot._get_shown_questions(guild_id)
+        # Reset shown questions for a fresh game every time
+        bot._reset_question_history(guild_id)
+        shown_questions = set()  # Start with empty set for fresh game
         
         # Start with a placeholder question - let the generation loop provide all real questions
         current_question = {

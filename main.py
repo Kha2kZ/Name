@@ -109,6 +109,9 @@ class AntiSpamBot(commands.Bot):
         self.active_games = {}
         self.leaderboard = {}
         
+        # Over/Under game tracking
+        self.overunder_games = {}
+        
     def _init_database(self):
         """Initialize database connection for persistent question tracking"""
         try:
@@ -234,6 +237,169 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return vietnamese_text.lower()  # Return original text if translation fails
+    
+    # === CASH SYSTEM HELPER METHODS ===
+    def _get_user_cash(self, guild_id, user_id):
+        """Get user's cash amount and daily streak info"""
+        if not self.db_connection:
+            return 0, None, 0
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
+                    (str(guild_id), str(user_id))
+                )
+                result = cursor.fetchone()
+                if result:
+                    return result[0], result[1], result[2]
+                else:
+                    return 0, None, 0
+        except Exception as e:
+            logger.error(f"Error getting user cash: {e}")
+            return 0, None, 0
+    
+    def _update_user_cash(self, guild_id, user_id, cash_amount, last_daily=None, daily_streak=None):
+        """Update user's cash amount and daily streak"""
+        if not self.db_connection:
+            return False
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                if last_daily is not None and daily_streak is not None:
+                    cursor.execute(
+                        """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
+                           VALUES (%s, %s, %s, %s, %s) 
+                           ON CONFLICT (guild_id, user_id) 
+                           DO UPDATE SET cash = %s, last_daily = %s, daily_streak = %s""",
+                        (str(guild_id), str(user_id), cash_amount, last_daily, daily_streak,
+                         cash_amount, last_daily, daily_streak)
+                    )
+                else:
+                    cursor.execute(
+                        """INSERT INTO user_cash (guild_id, user_id, cash) 
+                           VALUES (%s, %s, %s) 
+                           ON CONFLICT (guild_id, user_id) 
+                           DO UPDATE SET cash = user_cash.cash + %s""",
+                        (str(guild_id), str(user_id), cash_amount, cash_amount)
+                    )
+                self.db_connection.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating user cash: {e}")
+            return False
+    
+    def _calculate_daily_reward(self, streak):
+        """Calculate daily reward based on streak"""
+        base_reward = 1000
+        if streak == 0:
+            return base_reward
+        elif streak == 1:
+            return 1200
+        elif streak == 2:
+            return 1500
+        else:
+            # Continue increasing by 400 per day after day 3
+            return 1500 + (400 * (streak - 2))
+    
+    async def _end_overunder_game(self, guild_id, game_id):
+        """End the Over/Under game and distribute winnings"""
+        await asyncio.sleep(150)  # Wait for game duration
+        
+        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
+            return
+        
+        game_data = self.overunder_games[guild_id][game_id]
+        if game_data['status'] != 'active':
+            return
+        
+        game_data['status'] = 'ended'
+        
+        # Get the channel
+        channel = self.get_channel(int(game_data['channel_id']))
+        if not channel:
+            return
+        
+        # Generate random result (50/50 chance)
+        result = random.choice(['over', 'under'])
+        game_data['result'] = result
+        
+        # Update database
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
+                    (result, game_id)
+                )
+                self.db_connection.commit()
+        except Exception as e:
+            logger.error(f"Error updating game result: {e}")
+        
+        # Process winnings
+        winners = []
+        losers = []
+        
+        for bet in game_data['bets']:
+            if bet['side'] == result:
+                # Winner - give back double the bet
+                winnings = bet['amount'] * 2
+                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                winners.append({
+                    'username': bet['username'],
+                    'amount': bet['amount'],
+                    'winnings': winnings
+                })
+            else:
+                # Loser - they already lost their bet when placing it
+                losers.append({
+                    'username': bet['username'],
+                    'amount': bet['amount']
+                })
+        
+        # Create result embed
+        embed = discord.Embed(
+            title="🎲 Kết Quả Game Over/Under!",
+            description=f"**{result.upper()} THẮNG!** 🎉",
+            color=0x00ff88 if winners else 0xff4444
+        )
+        
+        if winners:
+            winners_text = "\n".join([f"🏆 **{w['username']}** - Cược {w['amount']:,} → Nhận **{w['winnings']:,} cash**" for w in winners])
+            embed.add_field(
+                name=f"✅ Người thắng ({len(winners)})",
+                value=winners_text,
+                inline=False
+            )
+        
+        if losers:
+            losers_text = "\n".join([f"💸 **{l['username']}** - Mất {l['amount']:,} cash" for l in losers])
+            embed.add_field(
+                name=f"❌ Người thua ({len(losers)})",
+                value=losers_text,
+                inline=False
+            )
+        
+        if not game_data['bets']:
+            embed.add_field(
+                name="🤷‍♂️ Không có ai tham gia",
+                value="Không có cược nào được đặt trong game này.",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="🎮 Game mới",
+            value="Dùng `?tx` để bắt đầu game Over/Under mới!",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Game ID: {game_id} • Cảm ơn bạn đã tham gia! 🎉")
+        
+        await channel.send(embed=embed)
+        
+        # Clean up game data
+        del self.overunder_games[guild_id][game_id]
+        if not self.overunder_games[guild_id]:  # Remove guild if no games left
+            del self.overunder_games[guild_id]
         
     async def setup_hook(self):
         """Called when the bot is starting up"""
@@ -1922,6 +2088,484 @@ async def main():
         embed.set_footer(text="Ai bảo làm phiền! 😤🖕")
         
         await ctx.send(embed=embed)
+
+    # === CASH SYSTEM HELPER METHODS ===
+    def _get_user_cash(self, guild_id, user_id):
+        """Get user's cash amount and daily streak info"""
+        if not self.db_connection:
+            return 0, None, 0
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
+                    (str(guild_id), str(user_id))
+                )
+                result = cursor.fetchone()
+                if result:
+                    return result[0], result[1], result[2]
+                else:
+                    return 0, None, 0
+        except Exception as e:
+            logger.error(f"Error getting user cash: {e}")
+            return 0, None, 0
+    
+    def _update_user_cash(self, guild_id, user_id, cash_amount, last_daily=None, daily_streak=None):
+        """Update user's cash amount and daily streak"""
+        if not self.db_connection:
+            return False
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                if last_daily is not None and daily_streak is not None:
+                    cursor.execute(
+                        """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
+                           VALUES (%s, %s, %s, %s, %s) 
+                           ON CONFLICT (guild_id, user_id) 
+                           DO UPDATE SET cash = %s, last_daily = %s, daily_streak = %s""",
+                        (str(guild_id), str(user_id), cash_amount, last_daily, daily_streak,
+                         cash_amount, last_daily, daily_streak)
+                    )
+                else:
+                    cursor.execute(
+                        """INSERT INTO user_cash (guild_id, user_id, cash) 
+                           VALUES (%s, %s, %s) 
+                           ON CONFLICT (guild_id, user_id) 
+                           DO UPDATE SET cash = user_cash.cash + %s""",
+                        (str(guild_id), str(user_id), cash_amount, cash_amount)
+                    )
+                self.db_connection.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating user cash: {e}")
+            return False
+    
+    def _calculate_daily_reward(self, streak):
+        """Calculate daily reward based on streak"""
+        base_reward = 1000
+        if streak == 0:
+            return base_reward
+        elif streak == 1:
+            return 1200
+        elif streak == 2:
+            return 1500
+        else:
+            # Continue increasing by 400 per day after day 3
+            return 1500 + (400 * (streak - 2))
+    
+    # === DAILY REWARD COMMAND ===
+    @bot.command(name='daily')
+    async def daily_reward(ctx):
+        """Claim daily reward with streak bonus"""
+        guild_id = str(ctx.guild.id)
+        user_id = str(ctx.author.id)
+        
+        current_cash, last_daily, streak = self._get_user_cash(guild_id, user_id)
+        today = datetime.utcnow().date()
+        
+        # Check if user already claimed today
+        if last_daily == today:
+            embed = discord.Embed(
+                title="⏰ Đã nhận thưởng hôm nay!",
+                description=f"Bạn đã nhận thưởng hàng ngày rồi!\n\n💰 **Số dư hiện tại:** {current_cash:,} cash\n🔥 **Streak hiện tại:** {streak} ngày",
+                color=0xffa500
+            )
+            embed.add_field(
+                name="🕐 Thời gian",
+                value="Quay lại vào ngày mai để nhận thưởng tiếp theo!",
+                inline=False
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Calculate new streak
+        yesterday = today - timedelta(days=1)
+        if last_daily == yesterday:
+            new_streak = streak + 1
+        elif last_daily is None:
+            new_streak = 0
+        else:
+            new_streak = 0  # Reset streak if missed a day
+        
+        # Calculate reward
+        reward = self._calculate_daily_reward(new_streak)
+        new_cash = current_cash + reward
+        
+        # Update database
+        success = self._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
+        
+        if success:
+            embed = discord.Embed(
+                title="🎁 Thưởng hàng ngày!",
+                description=f"**{ctx.author.mention}** đã nhận thưởng hàng ngày!",
+                color=0x00ff88
+            )
+            embed.add_field(
+                name="💰 Thưởng nhận được",
+                value=f"**+{reward:,} cash**",
+                inline=True
+            )
+            embed.add_field(
+                name="🔥 Streak",
+                value=f"**{new_streak + 1} ngày**",
+                inline=True
+            )
+            embed.add_field(
+                name="💳 Số dư mới",
+                value=f"**{new_cash:,} cash**",
+                inline=True
+            )
+            
+            if new_streak > streak:
+                embed.add_field(
+                    name="🚀 Bonus Streak!",
+                    value=f"Streak tăng lên {new_streak + 1} ngày! Thưởng ngày mai sẽ cao hơn!",
+                    inline=False
+                )
+            elif new_streak == 0 and last_daily is not None:
+                embed.add_field(
+                    name="💔 Streak bị reset",
+                    value="Bạn đã bỏ lỡ một ngày, streak đã được reset về 1.",
+                    inline=False
+                )
+            
+            embed.set_footer(text="Nhớ quay lại vào ngày mai để duy trì streak! 🔥")
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title="❌ Lỗi hệ thống",
+                description="Không thể xử lý thưởng hàng ngày. Vui lòng thử lại sau.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+    
+    # === OVER/UNDER GAME COMMANDS ===
+    @bot.command(name='tx')
+    async def start_overunder(ctx):
+        """Start an Over/Under betting game"""
+        guild_id = str(ctx.guild.id)
+        channel_id = str(ctx.channel.id)
+        game_id = f"{guild_id}_{channel_id}_{int(datetime.utcnow().timestamp())}"
+        
+        # Check if there's already an active game in this channel
+        if guild_id in self.overunder_games:
+            for existing_game_id, game_data in self.overunder_games[guild_id].items():
+                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
+                    embed = discord.Embed(
+                        title="⚠️ Đã có game đang diễn ra!",
+                        description="Kênh này đã có một game Over/Under đang diễn ra. Vui lòng đợi game hiện tại kết thúc.",
+                        color=0xffa500
+                    )
+                    await ctx.send(embed=embed)
+                    return
+        
+        # Create new game
+        end_time = datetime.utcnow() + timedelta(seconds=150)
+        
+        if guild_id not in self.overunder_games:
+            self.overunder_games[guild_id] = {}
+        
+        self.overunder_games[guild_id][game_id] = {
+            'channel_id': channel_id,
+            'end_time': end_time,
+            'bets': [],
+            'status': 'active',
+            'result': None
+        }
+        
+        # Store in database
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
+                    (game_id, guild_id, channel_id, end_time)
+                )
+                self.db_connection.commit()
+        except Exception as e:
+            logger.error(f"Error storing game in database: {e}")
+        
+        embed = discord.Embed(
+            title="🎲 Game Over/Under Bắt Đầu!",
+            description="**Chào mừng đến với game Over/Under!**\n\nHãy đặt cược xem kết quả sẽ là Over hay Under!",
+            color=0x00ff88
+        )
+        embed.add_field(
+            name="⏰ Thời gian",
+            value="**150 giây** để đặt cược",
+            inline=True
+        )
+        embed.add_field(
+            name="💰 Cách chơi",
+            value="Dùng lệnh `?cuoc <over/under> <số tiền>`",
+            inline=True
+        )
+        embed.add_field(
+            name="🏆 Phần thưởng",
+            value="**x2** số tiền cược nếu đoán đúng!",
+            inline=True
+        )
+        embed.add_field(
+            name="📋 Ví dụ",
+            value="`?cuoc over 1000` - Cược 1000 cash cho Over\n`?cuoc under 500` - Cược 500 cash cho Under",
+            inline=False
+        )
+        embed.set_footer(text=f"Game ID: {game_id} • Kết thúc lúc {end_time.strftime('%H:%M:%S')}")
+        
+        await ctx.send(embed=embed)
+        
+        # Schedule game end
+        asyncio.create_task(self._end_overunder_game(guild_id, game_id))
+    
+    @bot.command(name='cuoc')
+    async def place_bet(ctx, side: str = None, amount: str = None):
+        """Place a bet in the Over/Under game"""
+        if not side or not amount:
+            embed = discord.Embed(
+                title="❌ Sai cú pháp!",
+                description="Cách sử dụng: `?cuoc <over/under> <số tiền>`\n\n**Ví dụ:**\n`?cuoc over 1000`\n`?cuoc under 500`",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        guild_id = str(ctx.guild.id)
+        channel_id = str(ctx.channel.id)
+        user_id = str(ctx.author.id)
+        
+        # Validate side
+        side = side.lower()
+        if side not in ['over', 'under']:
+            embed = discord.Embed(
+                title="❌ Lựa chọn không hợp lệ!",
+                description="Bạn chỉ có thể chọn **over** hoặc **under**",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Validate amount
+        try:
+            bet_amount = int(amount)
+            if bet_amount <= 0:
+                raise ValueError()
+        except ValueError:
+            embed = discord.Embed(
+                title="❌ Số tiền không hợp lệ!",
+                description="Vui lòng nhập một số nguyên dương.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Check if there's an active game in this channel
+        active_game = None
+        if guild_id in self.overunder_games:
+            for game_id, game_data in self.overunder_games[guild_id].items():
+                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
+                    active_game = (game_id, game_data)
+                    break
+        
+        if not active_game:
+            embed = discord.Embed(
+                title="❌ Không có game nào đang diễn ra!",
+                description="Không có game Over/Under nào đang diễn ra trong kênh này. Dùng `?tx` để bắt đầu game mới.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        game_id, game_data = active_game
+        
+        # Check if game has ended
+        if datetime.utcnow() >= game_data['end_time']:
+            embed = discord.Embed(
+                title="⏰ Game đã kết thúc!",
+                description="Thời gian đặt cược đã hết. Đợi kết quả hoặc bắt đầu game mới.",
+                color=0xffa500
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Check user's cash
+        current_cash, _, _ = self._get_user_cash(guild_id, user_id)
+        if current_cash < bet_amount:
+            embed = discord.Embed(
+                title="💸 Không đủ tiền!",
+                description=f"Bạn chỉ có **{current_cash:,} cash** nhưng muốn cược **{bet_amount:,} cash**.\n\nDùng `?daily` để nhận thưởng hàng ngày!",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Check if user already has a bet in this game
+        for bet in game_data['bets']:
+            if bet['user_id'] == user_id:
+                embed = discord.Embed(
+                    title="⚠️ Đã đặt cược!",
+                    description=f"Bạn đã đặt cược **{bet['amount']:,} cash** cho **{bet['side'].upper()}** trong game này.",
+                    color=0xffa500
+                )
+                await ctx.send(embed=embed)
+                return
+        
+        # Deduct cash from user
+        new_cash = current_cash - bet_amount
+        success = self._update_user_cash(guild_id, user_id, new_cash, None, None)
+        
+        if not success:
+            embed = discord.Embed(
+                title="❌ Lỗi hệ thống!",
+                description="Không thể xử lý cược của bạn. Vui lòng thử lại.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Add bet to game
+        bet_data = {
+            'user_id': user_id,
+            'username': ctx.author.display_name,
+            'side': side,
+            'amount': bet_amount
+        }
+        game_data['bets'].append(bet_data)
+        
+        # Update database
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
+                    (json.dumps(game_data['bets']), game_id)
+                )
+                self.db_connection.commit()
+        except Exception as e:
+            logger.error(f"Error updating game bets: {e}")
+        
+        embed = discord.Embed(
+            title="✅ Đặt cược thành công!",
+            description=f"**{ctx.author.mention}** đã đặt cược!",
+            color=0x00ff88
+        )
+        embed.add_field(
+            name="🎯 Lựa chọn",
+            value=f"**{side.upper()}**",
+            inline=True
+        )
+        embed.add_field(
+            name="💰 Số tiền cược",
+            value=f"**{bet_amount:,} cash**",
+            inline=True
+        )
+        embed.add_field(
+            name="💳 Số dư còn lại",
+            value=f"**{new_cash:,} cash**",
+            inline=True
+        )
+        
+        time_left = game_data['end_time'] - datetime.utcnow()
+        minutes, seconds = divmod(int(time_left.total_seconds()), 60)
+        embed.set_footer(text=f"Thời gian còn lại: {minutes}:{seconds:02d} • Chúc may mắn! 🍀")
+        
+        await ctx.send(embed=embed)
+    
+    async def _end_overunder_game(self, guild_id, game_id):
+        """End the Over/Under game and distribute winnings"""
+        await asyncio.sleep(150)  # Wait for game duration
+        
+        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
+            return
+        
+        game_data = self.overunder_games[guild_id][game_id]
+        if game_data['status'] != 'active':
+            return
+        
+        game_data['status'] = 'ended'
+        
+        # Get the channel
+        channel = self.get_channel(int(game_data['channel_id']))
+        if not channel:
+            return
+        
+        # Generate random result (50/50 chance)
+        result = random.choice(['over', 'under'])
+        game_data['result'] = result
+        
+        # Update database
+        try:
+            with self.db_connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
+                    (result, game_id)
+                )
+                self.db_connection.commit()
+        except Exception as e:
+            logger.error(f"Error updating game result: {e}")
+        
+        # Process winnings
+        winners = []
+        losers = []
+        
+        for bet in game_data['bets']:
+            if bet['side'] == result:
+                # Winner - give back double the bet
+                winnings = bet['amount'] * 2
+                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                winners.append({
+                    'username': bet['username'],
+                    'amount': bet['amount'],
+                    'winnings': winnings
+                })
+            else:
+                # Loser - they already lost their bet when placing it
+                losers.append({
+                    'username': bet['username'],
+                    'amount': bet['amount']
+                })
+        
+        # Create result embed
+        embed = discord.Embed(
+            title="🎲 Kết Quả Game Over/Under!",
+            description=f"**{result.upper()} THẮNG!** 🎉",
+            color=0x00ff88 if winners else 0xff4444
+        )
+        
+        if winners:
+            winners_text = "\n".join([f"🏆 **{w['username']}** - Cược {w['amount']:,} → Nhận **{w['winnings']:,} cash**" for w in winners])
+            embed.add_field(
+                name=f"✅ Người thắng ({len(winners)})",
+                value=winners_text,
+                inline=False
+            )
+        
+        if losers:
+            losers_text = "\n".join([f"💸 **{l['username']}** - Mất {l['amount']:,} cash" for l in losers])
+            embed.add_field(
+                name=f"❌ Người thua ({len(losers)})",
+                value=losers_text,
+                inline=False
+            )
+        
+        if not game_data['bets']:
+            embed.add_field(
+                name="🤷‍♂️ Không có ai tham gia",
+                value="Không có cược nào được đặt trong game này.",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="🎮 Game mới",
+            value="Dùng `?tx` để bắt đầu game Over/Under mới!",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Game ID: {game_id} • Cảm ơn bạn đã tham gia! 🎉")
+        
+        await channel.send(embed=embed)
+        
+        # Clean up game data
+        del self.overunder_games[guild_id][game_id]
+        if not self.overunder_games[guild_id]:  # Remove guild if no games left
+            del self.overunder_games[guild_id]
 
     @bot.command(name='reset_questions')
     @commands.has_permissions(administrator=True)

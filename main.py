@@ -1516,8 +1516,7 @@ async def main():
             color=0x9966cc
         )
         embed.set_author(name=f"{ctx.author.display_name} says...", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
-        embed.set_footer(text="✨ Message echoed successfully")
-        await ctx.send(embed=embed)
+        await ctx.send(message)
     
     # Game Commands
     @bot.command(name='qna')

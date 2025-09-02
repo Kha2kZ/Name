@@ -57,6 +57,7 @@ class BotMonitor:
             try:
                 await self._collect_system_stats()
                 await self._cleanup_old_data()
+                await self._check_bot_health()
                 await asyncio.sleep(60)  # Check every minute
             except asyncio.CancelledError:
                 break
@@ -83,6 +84,53 @@ class BotMonitor:
         guild_count = len(self.bot.guilds)
         self.stats['hourly_stats'][hour_key]['guild_count'] = guild_count
         self.stats['daily_stats'][day_key]['guild_count'] = guild_count
+    
+    async def _check_bot_health(self):
+        """Check bot health and restart if necessary"""
+        try:
+            # Check if bot is still connected to Discord
+            if not self.bot.is_ready():
+                logger.warning("Bot is not ready - potential connection issue")
+                await self._record_error("Bot not ready")
+                return
+            
+            # Check latency - if too high, might indicate connection issues
+            latency_ms = self.bot.latency * 1000
+            if latency_ms > 5000:  # 5 seconds is very high
+                logger.warning(f"Very high latency detected: {latency_ms:.0f}ms")
+                await self._record_error(f"High latency: {latency_ms:.0f}ms")
+            
+            # Check if bot lost connection to guilds
+            if len(self.bot.guilds) == 0:
+                logger.warning("Bot is connected but in 0 guilds - potential issue")
+                await self._record_error("Bot in 0 guilds")
+            
+            # Record health check completion
+            now = datetime.utcnow()
+            hour_key = now.strftime('%Y-%m-%d-%H')
+            self.stats['hourly_stats'][hour_key]['health_checks'] = self.stats['hourly_stats'][hour_key].get('health_checks', 0) + 1
+            
+        except Exception as e:
+            logger.error(f"Error during health check: {e}")
+            await self._record_error(f"Health check error: {str(e)}")
+    
+    async def _record_error(self, error_message: str):
+        """Record error and add to recent activity for tracking"""
+        now = datetime.utcnow()
+        
+        # Add to recent activity
+        activity = {
+            'timestamp': now.isoformat(),
+            'type': 'error',
+            'subtype': 'health_check',
+            'guild_id': 'system',
+            'details': {'error': error_message}
+        }
+        self.recent_activity.append(activity)
+        
+        # Update error counters
+        hour_key = now.strftime('%Y-%m-%d-%H')
+        self.stats['hourly_stats'][hour_key]['errors'] = self.stats['hourly_stats'][hour_key].get('errors', 0) + 1
     
     async def _cleanup_old_data(self):
         """Clean up old statistical data to prevent memory bloat"""

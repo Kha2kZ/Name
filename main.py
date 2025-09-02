@@ -250,8 +250,8 @@ class AntiSpamBot(commands.Bot):
         await self.change_presence(
             status=discord.Status.online,
             activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name="for suspicious activity"
+                type=discord.ActivityType.playing,
+                name="with your feelings 💔"
             )
         )
         

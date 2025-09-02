@@ -1457,6 +1457,19 @@ async def main():
         )
         
         embed.add_field(
+            name="💕 Social Commands",
+            value=(
+                "```css\n"
+                "?kiss @user       → Kiss someone 💋\n"
+                "?hug @user        → Hug someone 🤗\n"
+                "?hs @user         → Handshake with someone 🤝\n"
+                "?f*ck @user       → Do spicy things 🔥\n"
+                "```"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
             name="📋 Usage Notes",
             value=(
                 "**🔐 Admin Commands:** Most security and moderation commands require admin permissions\n"
@@ -1863,6 +1876,49 @@ async def main():
         )
         embed.set_image(url=selected_gif)
         embed.set_footer(text="Tình bạn đẹp! 👫")
+        
+        await ctx.send(embed=embed)
+
+    @bot.command(name='f*ck')
+    async def fck_command(ctx, member: Optional[discord.Member] = None):
+        """F*ck someone 🔥"""
+        if member is None:
+            embed = discord.Embed(
+                title="🔥 Lệnh F*ck",
+                description="Hãy chọn một người để... bạn biết đấy 😏\n\nSử dụng: `?f*ck @người_nào_đó`",
+                color=0xff4500
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        if member == ctx.author:
+            embed = discord.Embed(
+                title="🔥 Tự làm với mình?",
+                description="Bạn không thể tự làm với chính mình! Hãy tìm ai đó khác 😈",
+                color=0xff4500
+            )
+            await ctx.send(embed=embed)
+            return
+            
+        # Random spicy GIFs
+        spicy_gifs = [
+            "https://media.tenor.com/bJSIRPjbAVEAAAAM/anime-love.gif",
+            "https://media.tenor.com/7qXq4wO_PSQAAAAM/anime-kiss.gif",
+            "https://media.tenor.com/K9zGGUJTxg8AAAAM/anime-blush.gif",
+            "https://media.tenor.com/AetJqjJJQAsAAAAM/anime-couple.gif",
+            "https://media.tenor.com/cT7zG8yoF0QAAAAM/anime-love-anime-romance.gif",
+            "https://media.tenor.com/9F1G2QH8MAYAAAAM/anime-romantic.gif"
+        ]
+        
+        selected_gif = random.choice(spicy_gifs)
+        
+        embed = discord.Embed(
+            title="🔥 Oh My!",
+            description=f"**{ctx.author.mention}** đã làm những điều nóng bỏng với **{member.mention}**! 🔥💦",
+            color=0xff4500
+        )
+        embed.set_image(url=selected_gif)
+        embed.set_footer(text="Nóng bỏng quá! 😈🔥")
         
         await ctx.send(embed=embed)
 

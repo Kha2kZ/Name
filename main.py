@@ -1463,7 +1463,7 @@ async def main():
                 "?kiss @user       → Kiss someone 💋\n"
                 "?hug @user        → Hug someone 🤗\n"
                 "?hs @user         → Handshake with someone 🤝\n"
-                "?f*ck @user       → Do spicy things 🔥\n"
+                "?f*ck @user       → Give middle finger 🖕\n"
                 "```"
             ),
             inline=False
@@ -1881,11 +1881,11 @@ async def main():
 
     @bot.command(name='f*ck')
     async def fck_command(ctx, member: Optional[discord.Member] = None):
-        """F*ck someone 🔥"""
+        """Give someone the middle finger 🖕"""
         if member is None:
             embed = discord.Embed(
-                title="🔥 Lệnh F*ck",
-                description="Hãy chọn một người để... bạn biết đấy 😏\n\nSử dụng: `?f*ck @người_nào_đó`",
+                title="🖕 Lệnh F*ck",
+                description="Hãy chọn một người để chỉ thẳng mặt! 🖕\n\nSử dụng: `?f*ck @người_nào_đó`",
                 color=0xff4500
             )
             await ctx.send(embed=embed)
@@ -1893,32 +1893,32 @@ async def main():
             
         if member == ctx.author:
             embed = discord.Embed(
-                title="🔥 Tự làm với mình?",
-                description="Bạn không thể tự làm với chính mình! Hãy tìm ai đó khác 😈",
+                title="🖕 Tự chỉ mình?",
+                description="Bạn không thể tự chỉ thẳng mặt mình! Hãy tìm ai đó khác để mắng 😤",
                 color=0xff4500
             )
             await ctx.send(embed=embed)
             return
             
-        # Random spicy GIFs
-        spicy_gifs = [
-            "https://media.tenor.com/bJSIRPjbAVEAAAAM/anime-love.gif",
-            "https://media.tenor.com/7qXq4wO_PSQAAAAM/anime-kiss.gif",
-            "https://media.tenor.com/K9zGGUJTxg8AAAAM/anime-blush.gif",
-            "https://media.tenor.com/AetJqjJJQAsAAAAM/anime-couple.gif",
-            "https://media.tenor.com/cT7zG8yoF0QAAAAM/anime-love-anime-romance.gif",
-            "https://media.tenor.com/9F1G2QH8MAYAAAAM/anime-romantic.gif"
+        # Random middle finger GIFs
+        middle_finger_gifs = [
+            "https://media.tenor.com/YQpvQAW-2VcAAAAM/anime-middle-finger.gif",
+            "https://media.tenor.com/H7OVBcUBE7QAAAAM/middle-finger-anime.gif",
+            "https://media.tenor.com/rL3CPcYztOsAAAAM/anime-finger.gif",
+            "https://media.tenor.com/e0pUE4nqbKgAAAAM/middle-finger.gif",
+            "https://media.tenor.com/4wEUbVm8EEYAAAAM/anime-mad.gif",
+            "https://media.tenor.com/zwKvQ9A-VFIAAAAM/fuck-you-middle-finger.gif"
         ]
         
-        selected_gif = random.choice(spicy_gifs)
+        selected_gif = random.choice(middle_finger_gifs)
         
         embed = discord.Embed(
-            title="🔥 Oh My!",
-            description=f"**{ctx.author.mention}** đã làm những điều nóng bỏng với **{member.mention}**! 🔥💦",
+            title="🖕 F*ck You!",
+            description=f"**{ctx.author.mention}** đã chỉ thẳng mặt **{member.mention}**! 🖕😤",
             color=0xff4500
         )
         embed.set_image(url=selected_gif)
-        embed.set_footer(text="Nóng bỏng quá! 😈🔥")
+        embed.set_footer(text="Ai bảo làm phiền! 😤🖕")
         
         await ctx.send(embed=embed)
 

@@ -127,7 +127,7 @@ class AntiSpamBot(commands.Bot):
             return set()
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT question_text FROM shown_questions WHERE guild_id = %s",
                     (guild_id,)
@@ -144,12 +144,12 @@ class AntiSpamBot(commands.Bot):
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
                     (guild_id, question_text)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error marking question as shown: {e}")
     
@@ -159,14 +159,14 @@ class AntiSpamBot(commands.Bot):
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 # Use executemany for batch insert
                 values = [(guild_id, question) for question in questions]
                 cursor.executemany(
                     "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
                     values
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
                 logger.info(f"Batch marked {len(questions)} questions as shown for guild {guild_id}")
         except Exception as e:
             logger.error(f"Error batch marking questions as shown: {e}")
@@ -180,12 +180,12 @@ class AntiSpamBot(commands.Bot):
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM shown_questions WHERE guild_id = %s",
                     (guild_id,)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
                 logger.info(f"Reset question history for guild {guild_id}")
         except Exception as e:
             logger.error(f"Error resetting question history: {e}")
@@ -245,7 +245,7 @@ class AntiSpamBot(commands.Bot):
             return 0, None, 0
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
                     (str(guild_id), str(user_id))
@@ -265,7 +265,7 @@ class AntiSpamBot(commands.Bot):
             return False
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
                     cursor.execute(
                         """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
@@ -283,7 +283,7 @@ class AntiSpamBot(commands.Bot):
                            DO UPDATE SET cash = user_cash.cash + %s""",
                         (str(guild_id), str(user_id), cash_amount, cash_amount)
                     )
-                self.db_connection.commit()
+                bot.db_connection.commit()
                 return True
         except Exception as e:
             logger.error(f"Error updating user cash: {e}")
@@ -306,32 +306,32 @@ class AntiSpamBot(commands.Bot):
         """End the Over/Under game and distribute winnings"""
         await asyncio.sleep(150)  # Wait for game duration
         
-        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
+        if guild_id not in bot.overunder_games or game_id not in bot.overunder_games[guild_id]:
             return
         
-        game_data = self.overunder_games[guild_id][game_id]
+        game_data = bot.overunder_games[guild_id][game_id]
         if game_data['status'] != 'active':
             return
         
         game_data['status'] = 'ended'
         
         # Get the channel
-        channel = self.get_channel(int(game_data['channel_id']))
+        channel = bot.get_channel(int(game_data['channel_id']))
         if not channel:
             return
         
         # Generate random result (50/50 chance)
-        result = random.choice(['over', 'under'])
+        result = random.choice(['tai', 'xiu'])
         game_data['result'] = result
         
         # Update database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -343,7 +343,7 @@ class AntiSpamBot(commands.Bot):
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],
@@ -2096,7 +2096,7 @@ async def main():
             return 0, None, 0
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
                     (str(guild_id), str(user_id))
@@ -2116,7 +2116,7 @@ async def main():
             return False
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
                     cursor.execute(
                         """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
@@ -2134,7 +2134,7 @@ async def main():
                            DO UPDATE SET cash = user_cash.cash + %s""",
                         (str(guild_id), str(user_id), cash_amount, cash_amount)
                     )
-                self.db_connection.commit()
+                bot.db_connection.commit()
                 return True
         except Exception as e:
             logger.error(f"Error updating user cash: {e}")
@@ -2160,7 +2160,7 @@ async def main():
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
         
-        current_cash, last_daily, streak = self._get_user_cash(guild_id, user_id)
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         today = datetime.utcnow().date()
         
         # Check if user already claimed today
@@ -2188,11 +2188,11 @@ async def main():
             new_streak = 0  # Reset streak if missed a day
         
         # Calculate reward
-        reward = self._calculate_daily_reward(new_streak)
+        reward = bot._calculate_daily_reward(new_streak)
         new_cash = current_cash + reward
         
         # Update database
-        success = self._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
+        success = bot._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
         
         if success:
             embed = discord.Embed(
@@ -2248,8 +2248,8 @@ async def main():
         game_id = f"{guild_id}_{channel_id}_{int(datetime.utcnow().timestamp())}"
         
         # Check if there's already an active game in this channel
-        if guild_id in self.overunder_games:
-            for existing_game_id, game_data in self.overunder_games[guild_id].items():
+        if guild_id in bot.overunder_games:
+            for existing_game_id, game_data in bot.overunder_games[guild_id].items():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     embed = discord.Embed(
                         title="⚠️ Đã có game đang diễn ra!",
@@ -2262,10 +2262,10 @@ async def main():
         # Create new game
         end_time = datetime.utcnow() + timedelta(seconds=150)
         
-        if guild_id not in self.overunder_games:
-            self.overunder_games[guild_id] = {}
+        if guild_id not in bot.overunder_games:
+            bot.overunder_games[guild_id] = {}
         
-        self.overunder_games[guild_id][game_id] = {
+        bot.overunder_games[guild_id][game_id] = {
             'channel_id': channel_id,
             'end_time': end_time,
             'bets': [],
@@ -2275,18 +2275,18 @@ async def main():
         
         # Store in database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
                     (game_id, guild_id, channel_id, end_time)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error storing game in database: {e}")
         
         embed = discord.Embed(
-            title="🎲 Game Over/Under Bắt Đầu!",
-            description="**Chào mừng đến với game Over/Under!**\n\nHãy đặt cược xem kết quả sẽ là Over hay Under!",
+            title="🎲 Game Tài Xỉu Bắt Đầu!",
+            description="**Chào mừng đến với game Tài Xỉu!**\n\nHãy đặt cược xem kết quả sẽ là Tài hay Xỉu!",
             color=0x00ff88
         )
         embed.add_field(
@@ -2296,7 +2296,7 @@ async def main():
         )
         embed.add_field(
             name="💰 Cách chơi",
-            value="Dùng lệnh `?cuoc <over/under> <số tiền>`",
+            value="Dùng lệnh `?cuoc <tai/xiu> <số tiền>`",
             inline=True
         )
         embed.add_field(
@@ -2306,7 +2306,7 @@ async def main():
         )
         embed.add_field(
             name="📋 Ví dụ",
-            value="`?cuoc over 1000` - Cược 1000 cash cho Over\n`?cuoc under 500` - Cược 500 cash cho Under",
+            value="`?cuoc tai 1000` - Cược 1000 cash cho Tài\n`?cuoc xiu 500` - Cược 500 cash cho Xỉu",
             inline=False
         )
         embed.set_footer(text=f"Game ID: {game_id} • Kết thúc lúc {end_time.strftime('%H:%M:%S')}")
@@ -2314,15 +2314,15 @@ async def main():
         await ctx.send(embed=embed)
         
         # Schedule game end
-        asyncio.create_task(self._end_overunder_game(guild_id, game_id))
+        asyncio.create_task(bot._end_overunder_game(guild_id, game_id))
     
     @bot.command(name='cuoc')
     async def place_bet(ctx, side: str = None, amount: str = None):
-        """Place a bet in the Over/Under game"""
+        """Place a bet in the Tai/Xiu game"""
         if not side or not amount:
             embed = discord.Embed(
                 title="❌ Sai cú pháp!",
-                description="Cách sử dụng: `?cuoc <over/under> <số tiền>`\n\n**Ví dụ:**\n`?cuoc over 1000`\n`?cuoc under 500`",
+                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000`\n`?cuoc xiu 500`",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2334,10 +2334,10 @@ async def main():
         
         # Validate side
         side = side.lower()
-        if side not in ['over', 'under']:
+        if side not in ['tai', 'xiu']:
             embed = discord.Embed(
                 title="❌ Lựa chọn không hợp lệ!",
-                description="Bạn chỉ có thể chọn **over** hoặc **under**",
+                description="Bạn chỉ có thể chọn **tai** hoặc **xiu**",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2359,8 +2359,8 @@ async def main():
         
         # Check if there's an active game in this channel
         active_game = None
-        if guild_id in self.overunder_games:
-            for game_id, game_data in self.overunder_games[guild_id].items():
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     active_game = (game_id, game_data)
                     break
@@ -2368,7 +2368,7 @@ async def main():
         if not active_game:
             embed = discord.Embed(
                 title="❌ Không có game nào đang diễn ra!",
-                description="Không có game Over/Under nào đang diễn ra trong kênh này. Dùng `?tx` để bắt đầu game mới.",
+                description="Không có game Tài Xỉu nào đang diễn ra trong kênh này. Dùng `?tx` để bắt đầu game mới.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2387,7 +2387,7 @@ async def main():
             return
         
         # Check user's cash
-        current_cash, _, _ = self._get_user_cash(guild_id, user_id)
+        current_cash, _, _ = bot._get_user_cash(guild_id, user_id)
         if current_cash < bet_amount:
             embed = discord.Embed(
                 title="💸 Không đủ tiền!",
@@ -2410,7 +2410,7 @@ async def main():
         
         # Deduct cash from user
         new_cash = current_cash - bet_amount
-        success = self._update_user_cash(guild_id, user_id, new_cash, None, None)
+        success = bot._update_user_cash(guild_id, user_id, new_cash, None, None)
         
         if not success:
             embed = discord.Embed(
@@ -2432,12 +2432,12 @@ async def main():
         
         # Update database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
                     (json.dumps(game_data['bets']), game_id)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game bets: {e}")
         
@@ -2448,7 +2448,7 @@ async def main():
         )
         embed.add_field(
             name="🎯 Lựa chọn",
-            value=f"**{side.upper()}**",
+            value=f"**{'TÀI' if side == 'tai' else 'XỈU'}**",
             inline=True
         )
         embed.add_field(
@@ -2468,36 +2468,36 @@ async def main():
         
         await ctx.send(embed=embed)
     
-    async def _end_overunder_game(self, guild_id, game_id):
-        """End the Over/Under game and distribute winnings"""
+    async def _end_overunder_game(guild_id, game_id):
+        """End the Tai/Xiu game and distribute winnings"""
         await asyncio.sleep(150)  # Wait for game duration
         
-        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
+        if guild_id not in bot.overunder_games or game_id not in bot.overunder_games[guild_id]:
             return
         
-        game_data = self.overunder_games[guild_id][game_id]
+        game_data = bot.overunder_games[guild_id][game_id]
         if game_data['status'] != 'active':
             return
         
         game_data['status'] = 'ended'
         
         # Get the channel
-        channel = self.get_channel(int(game_data['channel_id']))
+        channel = bot.get_channel(int(game_data['channel_id']))
         if not channel:
             return
         
         # Generate random result (50/50 chance)
-        result = random.choice(['over', 'under'])
+        result = random.choice(['tai', 'xiu'])
         game_data['result'] = result
         
         # Update database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -2509,7 +2509,7 @@ async def main():
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],

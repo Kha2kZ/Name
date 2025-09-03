@@ -127,7 +127,7 @@ class AntiSpamBot(commands.Bot):
             return set()
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT question_text FROM shown_questions WHERE guild_id = %s",
                     (guild_id,)
@@ -144,12 +144,12 @@ class AntiSpamBot(commands.Bot):
             return
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
                     (guild_id, question_text)
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
         except Exception as e:
             logger.error(f"Error marking question as shown: {e}")
     
@@ -159,14 +159,14 @@ class AntiSpamBot(commands.Bot):
             return
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 # Use executemany for batch insert
                 values = [(guild_id, question) for question in questions]
                 cursor.executemany(
                     "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
                     values
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
                 logger.info(f"Batch marked {len(questions)} questions as shown for guild {guild_id}")
         except Exception as e:
             logger.error(f"Error batch marking questions as shown: {e}")
@@ -180,12 +180,12 @@ class AntiSpamBot(commands.Bot):
             return
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM shown_questions WHERE guild_id = %s",
                     (guild_id,)
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
                 logger.info(f"Reset question history for guild {guild_id}")
         except Exception as e:
             logger.error(f"Error resetting question history: {e}")
@@ -245,7 +245,7 @@ class AntiSpamBot(commands.Bot):
             return 0, None, 0
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
                     (str(guild_id), str(user_id))
@@ -265,7 +265,7 @@ class AntiSpamBot(commands.Bot):
             return False
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
                     cursor.execute(
                         """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
@@ -283,7 +283,7 @@ class AntiSpamBot(commands.Bot):
                            DO UPDATE SET cash = user_cash.cash + %s""",
                         (str(guild_id), str(user_id), cash_amount, cash_amount)
                     )
-                bot.db_connection.commit()
+                self.db_connection.commit()
                 return True
         except Exception as e:
             logger.error(f"Error updating user cash: {e}")
@@ -306,17 +306,17 @@ class AntiSpamBot(commands.Bot):
         """End the Over/Under game and distribute winnings"""
         await asyncio.sleep(150)  # Wait for game duration
         
-        if guild_id not in bot.overunder_games or game_id not in bot.overunder_games[guild_id]:
+        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
             return
         
-        game_data = bot.overunder_games[guild_id][game_id]
+        game_data = self.overunder_games[guild_id][game_id]
         if game_data['status'] != 'active':
             return
         
         game_data['status'] = 'ended'
         
         # Get the channel
-        channel = bot.get_channel(int(game_data['channel_id']))
+        channel = self.get_channel(int(game_data['channel_id']))
         if not channel:
             return
         
@@ -326,12 +326,12 @@ class AntiSpamBot(commands.Bot):
         
         # Update database
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -343,7 +343,7 @@ class AntiSpamBot(commands.Bot):
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],
@@ -2096,7 +2096,7 @@ async def main():
             return 0, None, 0
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
                     (str(guild_id), str(user_id))
@@ -2116,7 +2116,7 @@ async def main():
             return False
         
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
                     cursor.execute(
                         """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
@@ -2134,7 +2134,7 @@ async def main():
                            DO UPDATE SET cash = user_cash.cash + %s""",
                         (str(guild_id), str(user_id), cash_amount, cash_amount)
                     )
-                bot.db_connection.commit()
+                self.db_connection.commit()
                 return True
         except Exception as e:
             logger.error(f"Error updating user cash: {e}")
@@ -2275,12 +2275,12 @@ async def main():
         
         # Store in database
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
                     (game_id, guild_id, channel_id, end_time)
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
         except Exception as e:
             logger.error(f"Error storing game in database: {e}")
         
@@ -2432,12 +2432,12 @@ async def main():
         
         # Update database
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
                     (json.dumps(game_data['bets']), game_id)
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game bets: {e}")
         
@@ -2482,7 +2482,7 @@ async def main():
         game_data['status'] = 'ended'
         
         # Get the channel
-        channel = bot.get_channel(int(game_data['channel_id']))
+        channel = self.get_channel(int(game_data['channel_id']))
         if not channel:
             return
         
@@ -2492,12 +2492,12 @@ async def main():
         
         # Update database
         try:
-            with bot.db_connection.cursor() as cursor:
+            with self.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                bot.db_connection.commit()
+                self.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -2509,7 +2509,7 @@ async def main():
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],

@@ -2449,7 +2449,7 @@ async def main():
         await ctx.send(embed=embed)
         
         # Schedule game end
-        asyncio.create_task(bot._end_overunder_game(guild_id, game_id))
+        asyncio.create_task(_end_overunder_game(guild_id, game_id))
     
     @bot.command(name='cuoc')
     async def place_bet(ctx, side: str = None, amount: str = None):

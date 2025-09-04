@@ -2555,6 +2555,9 @@ async def main():
             await ctx.send(embed=embed)
             return
         
+        # Calculate remaining cash
+        remaining_cash = current_cash - bet_amount
+        
         # Add bet to game
         bet_data = {
             'user_id': user_id,
@@ -2575,24 +2578,35 @@ async def main():
         except Exception as e:
             logger.error(f"Error updating game bets: {e}")
         
+        # Beautiful success embed
         embed = discord.Embed(
-            title="✅ Đặt cược thành công!",
-            description=f"**{ctx.author.mention}** đã đặt cược!",
+            title="🎯 Đặt Cược Thành Công!",
+            description=f"🎲 **{ctx.author.display_name}** đã tham gia game Tài Xỉu!",
             color=0x00ff88
         )
         embed.add_field(
-            name="🎯 Lựa chọn",
-            value=f"**{'TÀI' if side == 'tai' else 'XỈU'}**",
+            name="🎰 Lựa chọn của bạn",
+            value=f"**{'🔺 TÀI' if side == 'tai' else '🔻 XỈU'}**",
             inline=True
         )
         embed.add_field(
-            name="💰 Số tiền cược",
-            value=f"**{bet_amount:,} cash**",
+            name="💰 Số tiền đã cược",
+            value=f"**{bet_amount:,}** cash",
             inline=True
         )
         embed.add_field(
-            name="💳 Số dư còn lại",
-            value=f"**{new_cash:,} cash**",
+            name="💳 Số dư hiện tại",
+            value=f"**{remaining_cash:,}** cash",
+            inline=True
+        )
+        embed.add_field(
+            name="🏆 Tiền thưởng nếu thắng",
+            value=f"**{bet_amount * 2:,}** cash",
+            inline=True
+        )
+        embed.add_field(
+            name="👥 Tổng người chơi",
+            value=f"**{len(game_data['bets'])}** người",
             inline=True
         )
         

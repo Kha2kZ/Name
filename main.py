@@ -6,8 +6,6 @@ import os
 import logging
 import random
 import string
-from keep_alive import keep_alive
-keep_alive()
 from datetime import datetime, timedelta
 from typing import Optional
 from openai import OpenAI
@@ -524,12 +522,12 @@ class AntiSpamBot(commands.Bot):
             'fansipan': ['phan xi păng', 'phan si pan', 'fanxipan', 'fan si pan'],
             'mekong': ['cửu long', 'mê kông', 'mekong', 'sông mê kông', 'song mekong'],
             'ho chi minh': ['bác hồ', 'chú hồ', 'hồ chí minh', 'hcm', 'ho chi minh'],
-            'hano'lotus': ['hà nội', 'ha noi', 'thủ đô', 'thu do'],
+            'hanoi': ['hà nội', 'ha noi', 'thủ đô', 'thu do'],
             'pho': ['phở', 'pho', 'phở bò', 'pho bo'],
             'ao dai': ['áo dài', 'ao dai', 'ao dai viet nam'],
             'lotus': ['sen', 'hoa sen', 'lotus', 'quoc hoa'],
             'dong': ['đồng', 'vnd', 'việt nam đồng', 'dong viet nam'],
-          'mộ 1975': ['1975', 'một nghìn chín trăm bảy mười lăm', 'nam 75'],
+            '1975': ['1975', 'một nghìn chín trăm bảy mười lăm', 'nam 75'],
             '1954': ['1954', 'một nghìn chín trăm năm mười tư', 'nam 54'],
             '1995': ['1995', 'một nghìn chín trăm chín mười lăm', 'nam 95'],
             'phu quoc': ['phú quốc', 'phu quoc', 'dao phu quoc'],

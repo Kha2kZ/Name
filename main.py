@@ -6,6 +6,8 @@ import os
 import logging
 import random
 import string
+from keep_alive import keep_alive
+keep_alive()
 from datetime import datetime, timedelta
 from typing import Optional
 from openai import OpenAI
@@ -267,9 +269,8 @@ class AntiSpamBot(commands.Bot):
         try:
             with self.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
-                    cursor.execute(
-                        """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) 
-                           VALUES (%s, %s, %s, %s, %s) 
+                    cursor.eecute(
+                        """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak)         VALUES (%s, %s, %s, %s, %s) 
                            ON CONFLICT (guild_id, user_id) 
                            DO UPDATE SET cash = %s, last_daily = %s, daily_streak = %s""",
                         (str(guild_id), str(user_id), cash_amount, last_daily, daily_streak,
@@ -523,12 +524,12 @@ class AntiSpamBot(commands.Bot):
             'fansipan': ['phan xi păng', 'phan si pan', 'fanxipan', 'fan si pan'],
             'mekong': ['cửu long', 'mê kông', 'mekong', 'sông mê kông', 'song mekong'],
             'ho chi minh': ['bác hồ', 'chú hồ', 'hồ chí minh', 'hcm', 'ho chi minh'],
-            'hanoi': ['hà nội', 'ha noi', 'thủ đô', 'thu do'],
+            'hano'lotus': ['hà nội', 'ha noi', 'thủ đô', 'thu do'],
             'pho': ['phở', 'pho', 'phở bò', 'pho bo'],
             'ao dai': ['áo dài', 'ao dai', 'ao dai viet nam'],
             'lotus': ['sen', 'hoa sen', 'lotus', 'quoc hoa'],
             'dong': ['đồng', 'vnd', 'việt nam đồng', 'dong viet nam'],
-            '1975': ['1975', 'một nghìn chín trăm bảy mười lăm', 'nam 75'],
+          'mộ 1975': ['1975', 'một nghìn chín trăm bảy mười lăm', 'nam 75'],
             '1954': ['1954', 'một nghìn chín trăm năm mười tư', 'nam 54'],
             '1995': ['1995', 'một nghìn chín trăm chín mười lăm', 'nam 95'],
             'phu quoc': ['phú quốc', 'phu quoc', 'dao phu quoc'],

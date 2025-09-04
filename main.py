@@ -343,7 +343,7 @@ class AntiSpamBot(commands.Bot):
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],
@@ -2410,12 +2410,12 @@ async def main():
         
         # Store in database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
                     (game_id, guild_id, channel_id, end_time)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error storing game in database: {e}")
         
@@ -2567,12 +2567,12 @@ async def main():
         
         # Update database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
                     (json.dumps(game_data['bets']), game_id)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game bets: {e}")
         
@@ -2679,7 +2679,7 @@ async def main():
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],

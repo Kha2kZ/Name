@@ -2153,6 +2153,39 @@ async def main():
             # Continue increasing by 400 per day after day 3
             return 1500 + (400 * (streak - 2))
     
+    # === CASH SYSTEM COMMANDS ===
+    @bot.command(name='money')
+    async def show_money(ctx):
+        """Show user's current money balance"""
+        guild_id = str(ctx.guild.id)
+        user_id = str(ctx.author.id)
+        
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
+        
+        embed = discord.Embed(
+            title="💰 Số dư tài khoản",
+            description=f"**{ctx.author.mention}**",
+            color=0x00ff88
+        )
+        embed.add_field(
+            name="💳 Số dư hiện tại",
+            value=f"**{current_cash:,} cash**",
+            inline=True
+        )
+        embed.add_field(
+            name="🔥 Daily Streak",
+            value=f"**{streak} ngày**",
+            inline=True
+        )
+        if last_daily:
+            embed.add_field(
+                name="📅 Lần nhận thưởng cuối",
+                value=f"**{last_daily}**",
+                inline=True
+            )
+        embed.set_footer(text="Dùng ?daily để nhận thưởng hàng ngày!")
+        await ctx.send(embed=embed)
+    
     # === DAILY REWARD COMMAND ===
     @bot.command(name='daily')
     async def daily_reward(ctx):
@@ -2235,6 +2268,108 @@ async def main():
             embed = discord.Embed(
                 title="❌ Lỗi hệ thống",
                 description="Không thể xử lý thưởng hàng ngày. Vui lòng thử lại sau.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+    
+    @bot.command(name='cashboard')
+    async def cash_leaderboard(ctx, page: int = 1):
+        """Show cash leaderboard with pagination"""
+        guild_id = str(ctx.guild.id)
+        
+        if not bot.db_connection:
+            embed = discord.Embed(
+                title="❌ Lỗi cơ sở dữ liệu",
+                description="Không thể kết nối với cơ sở dữ liệu.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        try:
+            with bot.db_connection.cursor() as cursor:
+                # Get total count of users with cash
+                cursor.execute(
+                    "SELECT COUNT(*) FROM user_cash WHERE guild_id = %s AND cash > 0",
+                    (guild_id,)
+                )
+                total_users = cursor.fetchone()[0]
+                
+                if total_users == 0:
+                    embed = discord.Embed(
+                        title="📈 Bảng xếp hạng Cash",
+                        description="Chưa có ai có tiền trong máy chủ này!\n\nDùng `?daily` để bắt đầu kiếm cash!",
+                        color=0x5865f2
+                    )
+                    await ctx.send(embed=embed)
+                    return
+                
+                # Calculate pagination
+                per_page = 10
+                total_pages = (total_users + per_page - 1) // per_page
+                
+                if page < 1 or page > total_pages:
+                    embed = discord.Embed(
+                        title="❌ Trang không hợp lệ",
+                        description=f"Vui lòng chọn trang từ 1 đến {total_pages}",
+                        color=0xff4444
+                    )
+                    await ctx.send(embed=embed)
+                    return
+                
+                offset = (page - 1) * per_page
+                
+                # Get leaderboard data for this page
+                cursor.execute(
+                    """SELECT user_id, cash, daily_streak 
+                       FROM user_cash 
+                       WHERE guild_id = %s AND cash > 0 
+                       ORDER BY cash DESC 
+                       LIMIT %s OFFSET %s""",
+                    (guild_id, per_page, offset)
+                )
+                results = cursor.fetchall()
+                
+                embed = discord.Embed(
+                    title="🏆 Bảng xếp hạng Cash",
+                    description=f"💰 **Top người giàu nhất trong máy chủ**\n📄 Trang {page}/{total_pages}",
+                    color=0xffd700
+                )
+                
+                for i, (user_id, cash, streak) in enumerate(results):
+                    try:
+                        user = await bot.fetch_user(int(user_id))
+                        rank = offset + i + 1
+                        
+                        if rank == 1:
+                            rank_emoji = "🥇"
+                        elif rank == 2:
+                            rank_emoji = "🥈" 
+                        elif rank == 3:
+                            rank_emoji = "🥉"
+                        else:
+                            rank_emoji = f"{rank}."
+                        
+                        embed.add_field(
+                            name=f"{rank_emoji} {user.display_name}",
+                            value=f"💰 **{cash:,} cash**\n🔥 {streak} ngày streak",
+                            inline=True
+                        )
+                    except:
+                        continue
+                
+                if total_pages > 1:
+                    embed.set_footer(text=f"Dùng ?cashboard <số trang> để xem trang khác • Trang {page}/{total_pages}")
+                else:
+                    embed.set_footer(text="Dùng ?daily để kiếm cash!")
+                
+                await ctx.send(embed=embed)
+                
+        except Exception as e:
+            logger.error(f"Error getting cash leaderboard: {e}")
+            embed = discord.Embed(
+                title="❌ Lỗi hệ thống",
+                description="Có lỗi xảy ra khi lấy bảng xếp hạng. Vui lòng thử lại sau.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2468,9 +2603,44 @@ async def main():
         
         await ctx.send(embed=embed)
     
-    async def _end_overunder_game(guild_id, game_id):
+    @bot.command(name='txstop')
+    async def stop_overunder(ctx):
+        """Stop the current Tai/Xiu game instantly and show results"""
+        guild_id = str(ctx.guild.id)
+        channel_id = str(ctx.channel.id)
+        
+        # Find active game in this channel
+        active_game_id = None
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
+                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
+                    active_game_id = game_id
+                    break
+        
+        if not active_game_id:
+            embed = discord.Embed(
+                title="❌ Không có game Tài Xỉu",
+                description="Hiện tại không có game Tài Xỉu nào đang chạy trong kênh này.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Stop the game instantly
+        embed = discord.Embed(
+            title="⏹️ Dừng game Tài Xỉu",
+            description="Game Tài Xỉu đã được dừng! Đang công bố kết quả...",
+            color=0xffa500
+        )
+        await ctx.send(embed=embed)
+        
+        # End game immediately
+        await _end_overunder_game(guild_id, active_game_id, instant_stop=True)
+    
+    async def _end_overunder_game(guild_id, game_id, instant_stop=False):
         """End the Tai/Xiu game and distribute winnings"""
-        await asyncio.sleep(150)  # Wait for game duration
+        if not instant_stop:
+            await asyncio.sleep(150)  # Wait for game duration
         
         if guild_id not in bot.overunder_games or game_id not in bot.overunder_games[guild_id]:
             return

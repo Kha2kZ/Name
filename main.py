@@ -2544,8 +2544,7 @@ async def main():
                 return
         
         # Deduct cash from user
-        new_cash = current_cash - bet_amount
-        success = bot._update_user_cash(guild_id, user_id, new_cash, None, None)
+        success = bot._update_user_cash(guild_id, user_id, -bet_amount, None, None)
         
         if not success:
             embed = discord.Embed(

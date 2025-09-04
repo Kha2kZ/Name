@@ -306,17 +306,17 @@ class AntiSpamBot(commands.Bot):
         """End the Over/Under game and distribute winnings"""
         await asyncio.sleep(150)  # Wait for game duration
         
-        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
+        if guild_id not in bot.overunder_games or game_id not in bot.overunder_games[guild_id]:
             return
         
-        game_data = self.overunder_games[guild_id][game_id]
+        game_data = bot.overunder_games[guild_id][game_id]
         if game_data['status'] != 'active':
             return
         
         game_data['status'] = 'ended'
         
         # Get the channel
-        channel = self.get_channel(int(game_data['channel_id']))
+        channel = bot.get_channel(int(game_data['channel_id']))
         if not channel:
             return
         
@@ -397,9 +397,9 @@ class AntiSpamBot(commands.Bot):
         await channel.send(embed=embed)
         
         # Clean up game data
-        del self.overunder_games[guild_id][game_id]
-        if not self.overunder_games[guild_id]:  # Remove guild if no games left
-            del self.overunder_games[guild_id]
+        del bot.overunder_games[guild_id][game_id]
+        if not bot.overunder_games[guild_id]:  # Remove guild if no games left
+            del bot.overunder_games[guild_id]
         
     async def setup_hook(self):
         """Called when the bot is starting up"""
@@ -2652,7 +2652,7 @@ async def main():
         game_data['status'] = 'ended'
         
         # Get the channel
-        channel = self.get_channel(int(game_data['channel_id']))
+        channel = bot.get_channel(int(game_data['channel_id']))
         if not channel:
             return
         
@@ -2733,9 +2733,9 @@ async def main():
         await channel.send(embed=embed)
         
         # Clean up game data
-        del self.overunder_games[guild_id][game_id]
-        if not self.overunder_games[guild_id]:  # Remove guild if no games left
-            del self.overunder_games[guild_id]
+        del bot.overunder_games[guild_id][game_id]
+        if not bot.overunder_games[guild_id]:  # Remove guild if no games left
+            del bot.overunder_games[guild_id]
 
     @bot.command(name='reset_questions')
     @commands.has_permissions(administrator=True)

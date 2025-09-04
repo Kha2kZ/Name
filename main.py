@@ -326,12 +326,12 @@ class AntiSpamBot(commands.Bot):
         
         # Update database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -2662,12 +2662,12 @@ async def main():
         
         # Update database
         try:
-            with self.db_connection.cursor() as cursor:
+            with bot.db_connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                self.db_connection.commit()
+                bot.db_connection.commit()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         

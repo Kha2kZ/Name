@@ -1674,12 +1674,31 @@ async def main():
         )
         
         embed.add_field(
+            name="💰 Cash & Tài Xỉu System",
+            value=(
+                "```yaml\n"
+                "?money            → Check your cash balance\n"
+                "?daily            → Claim daily reward (streak bonus)\n"
+                "?cashboard        → View cash leaderboard\n"
+                "?moneyhack <amt>  → Give money to user (Admin)\n"
+                "\n"
+                "🎲 Tài Xỉu Over/Under Game:\n"
+                "?tx               → Start new game (150s to bet)\n"
+                "?cuoc <tai/xiu> <amt> → Place bet on outcome\n"
+                "?txstop           → End current game instantly\n"
+                "```"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
             name="💖 Social Interactions",
             value=(
                 "```css\n"
                 "?kiss @user       → Kiss someone 💋\n"
                 "?hug @user        → Hug someone 🤗\n"
                 "?hs @user         → Handshake with someone 🤝\n"
+                "?f*ck @user       → Flip them off 🖕\n"
                 "```"
             ),
             inline=False
@@ -1691,19 +1710,7 @@ async def main():
                 "```css\n"
                 "?echo [message]   → Repeat your message\n"
                 "?help             → Show this command list\n"
-                "```"
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💕 Social Commands",
-            value=(
-                "```css\n"
-                "?kiss @user       → Kiss someone 💋\n"
-                "?hug @user        → Hug someone 🤗\n"
-                "?hs @user         → Handshake with someone 🤝\n"
-                "?f*ck @user       → Flip them off 🖕\n"
+                "?status           → Bot status and system info\n"
                 "```"
             ),
             inline=False
@@ -2840,6 +2847,58 @@ async def main():
             color=0x00ff88
         )
         await ctx.send(embed=embed)
+    
+    @bot.command(name='moneyhack')
+    @commands.has_permissions(administrator=True)
+    async def moneyhack(ctx, amount: int, user: discord.Member = None):
+        """Give money to a user (Admin only)"""
+        if user is None:
+            user = ctx.author
+        
+        guild_id = str(ctx.guild.id)
+        user_id = str(user.id)
+        
+        if amount <= 0:
+            embed = discord.Embed(
+                title="❌ Số tiền không hợp lệ",
+                description="Số tiền phải lớn hơn 0.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Get current cash
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
+        new_cash = current_cash + amount
+        
+        # Update user's cash
+        success = bot._update_user_cash(guild_id, user_id, new_cash, last_daily, streak)
+        
+        if success:
+            embed = discord.Embed(
+                title="💰 Money Hack Thành Công!",
+                description=f"**Admin {ctx.author.mention}** đã tặng tiền cho **{user.mention}**",
+                color=0x00ff88
+            )
+            embed.add_field(
+                name="💵 Số tiền tặng",
+                value=f"**+{amount:,} cash**",
+                inline=True
+            )
+            embed.add_field(
+                name="💳 Số dư mới",
+                value=f"**{new_cash:,} cash**",
+                inline=True
+            )
+            embed.set_footer(text="Chỉ Admin mới có thể sử dụng lệnh này!")
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title="❌ Lỗi hệ thống",
+                description="Không thể cập nhật số dư. Vui lòng thử lại sau.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
     
     # Error handling
     @bot.event

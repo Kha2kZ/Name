@@ -95,9 +95,9 @@ class AntiSpamBot(commands.Bot):
         # do not change this unless explicitly requested by the user
         self.openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         
-        # Database connection for persistent question tracking
-        self.db_connection = None
-        self._init_database()
+        # Database URL for creating connections as needed
+        self.database_url = os.environ.get("DATABASE_URL")
+        self._create_initial_tables()
         
         # Track member joins for raid detection
         self.recent_joins = {}
@@ -112,26 +112,28 @@ class AntiSpamBot(commands.Bot):
         # Over/Under game tracking
         self.overunder_games = {}
         
-    def _init_database(self):
-        """Initialize database connection and create tables if needed"""
+    def _get_db_connection(self):
+        """Get a fresh database connection for operations"""
+        if not self.database_url:
+            return None
         try:
-            self.db_connection = psycopg2.connect(os.environ.get("DATABASE_URL"))
-            logger.info("Database connection established for question tracking")
-            
-            # Create tables if they don't exist
-            self._create_tables()
-            
+            return psycopg2.connect(self.database_url)
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            self.db_connection = None
+            logger.error(f"Failed to create database connection: {e}")
+            return None
     
-    def _create_tables(self):
+    def _create_initial_tables(self):
         """Create necessary database tables if they don't exist"""
-        if not self.db_connection:
+        if not self.database_url:
+            logger.warning("DATABASE_URL not set, database features disabled")
+            return
+            
+        connection = self._get_db_connection()
+        if not connection:
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 # Create user_cash table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS user_cash (
@@ -165,19 +167,22 @@ class AntiSpamBot(commands.Bot):
                     )
                 """)
                 
-                self.db_connection.commit()
+                connection.commit()
                 logger.info("Database tables created/verified successfully")
                 
         except Exception as e:
             logger.error(f"Error creating database tables: {e}")
+        finally:
+            connection.close()
     
     def _get_shown_questions(self, guild_id):
         """Get all questions that have been shown to this guild"""
-        if not self.db_connection:
+        connection = self._get_db_connection()
+        if not connection:
             return set()
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT question_text FROM shown_questions WHERE guild_id = %s",
                     (guild_id,)
@@ -187,58 +192,72 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error getting shown questions: {e}")
             return set()
+        finally:
+            connection.close()
     
     def _mark_question_shown(self, guild_id, question_text):
         """Mark a question as shown for this guild"""
-        if not self.db_connection:
+        connection = self._get_db_connection()
+        if not connection:
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
                     (guild_id, question_text)
                 )
-                self.db_connection.commit()
+                connection.commit()
         except Exception as e:
             logger.error(f"Error marking question as shown: {e}")
+        finally:
+            connection.close()
     
     def _batch_mark_questions_shown(self, guild_id, questions):
         """Mark multiple questions as shown for this guild (batch operation)"""
-        if not self.db_connection or not questions:
+        if not questions:
+            return
+            
+        connection = self._get_db_connection()
+        if not connection:
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 # Use executemany for batch insert
                 values = [(guild_id, question) for question in questions]
                 cursor.executemany(
                     "INSERT INTO shown_questions (guild_id, question_text) VALUES (%s, %s) ON CONFLICT (guild_id, question_text) DO NOTHING",
                     values
                 )
-                self.db_connection.commit()
+                connection.commit()
                 logger.info(f"Batch marked {len(questions)} questions as shown for guild {guild_id}")
         except Exception as e:
             logger.error(f"Error batch marking questions as shown: {e}")
             # Fallback to individual inserts
             for question in questions:
                 self._mark_question_shown(guild_id, question)
+        finally:
+            connection.close()
 
     def _reset_question_history(self, guild_id):
         """Reset question history for a guild (admin command)"""
-        if not self.db_connection:
+        connection = self._get_db_connection()
+        if not connection:
             return
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(
                     "DELETE FROM shown_questions WHERE guild_id = %s",
                     (guild_id,)
                 )
-                self.db_connection.commit()
+                connection.commit()
                 logger.info(f"Reset question history for guild {guild_id}")
         except Exception as e:
             logger.error(f"Error resetting question history: {e}")
+        finally:
+            connection.close()
         
     async def translate_to_vietnamese(self, text):
         """Translate English text to Vietnamese"""
@@ -291,11 +310,12 @@ class AntiSpamBot(commands.Bot):
     # === CASH SYSTEM HELPER METHODS ===
     def _get_user_cash(self, guild_id, user_id):
         """Get user's cash amount and daily streak info"""
-        if not self.db_connection:
+        connection = self._get_db_connection()
+        if not connection:
             return 0, None, 0
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
                     (str(guild_id), str(user_id))
@@ -308,14 +328,17 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error getting user cash: {e}")
             return 0, None, 0
+        finally:
+            connection.close()
     
     def _update_user_cash(self, guild_id, user_id, cash_amount, last_daily=None, daily_streak=None):
         """Update user's cash amount and daily streak"""
-        if not self.db_connection:
+        connection = self._get_db_connection()
+        if not connection:
             return False
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
                     cursor.execute(
                         """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak)         VALUES (%s, %s, %s, %s, %s) 
@@ -332,11 +355,13 @@ class AntiSpamBot(commands.Bot):
                            DO UPDATE SET cash = user_cash.cash + %s""",
                         (str(guild_id), str(user_id), cash_amount, cash_amount)
                     )
-                self.db_connection.commit()
+                connection.commit()
                 return True
         except Exception as e:
             logger.error(f"Error updating user cash: {e}")
             return False
+        finally:
+            connection.close()
     
     def _calculate_daily_reward(self, streak):
         """Calculate daily reward based on streak"""
@@ -2141,11 +2166,12 @@ async def main():
     # === CASH SYSTEM HELPER METHODS ===
     def _get_user_cash(self, guild_id, user_id):
         """Get user's cash amount and daily streak info"""
-        if not self.db_connection:
+        connection = self._get_db_connection()
+        if not connection:
             return 0, None, 0
         
         try:
-            with self.db_connection.cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s",
                     (str(guild_id), str(user_id))
@@ -2158,6 +2184,8 @@ async def main():
         except Exception as e:
             logger.error(f"Error getting user cash: {e}")
             return 0, None, 0
+        finally:
+            connection.close()
     
     def _update_user_cash(self, guild_id, user_id, cash_amount, last_daily=None, daily_streak=None):
         """Update user's cash amount and daily streak"""

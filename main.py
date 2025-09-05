@@ -113,13 +113,63 @@ class AntiSpamBot(commands.Bot):
         self.overunder_games = {}
         
     def _init_database(self):
-        """Initialize database connection for persistent question tracking"""
+        """Initialize database connection and create tables if needed"""
         try:
             self.db_connection = psycopg2.connect(os.environ.get("DATABASE_URL"))
             logger.info("Database connection established for question tracking")
+            
+            # Create tables if they don't exist
+            self._create_tables()
+            
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             self.db_connection = None
+    
+    def _create_tables(self):
+        """Create necessary database tables if they don't exist"""
+        if not self.db_connection:
+            return
+        
+        try:
+            with self.db_connection.cursor() as cursor:
+                # Create user_cash table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_cash (
+                        guild_id VARCHAR(50) NOT NULL,
+                        user_id VARCHAR(50) NOT NULL,
+                        cash BIGINT DEFAULT 0,
+                        last_daily DATE,
+                        daily_streak INTEGER DEFAULT 0,
+                        PRIMARY KEY (guild_id, user_id)
+                    )
+                """)
+                
+                # Create shown_questions table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS shown_questions (
+                        guild_id VARCHAR(50) NOT NULL,
+                        question_text TEXT NOT NULL,
+                        PRIMARY KEY (guild_id, question_text)
+                    )
+                """)
+                
+                # Create overunder_games table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS overunder_games (
+                        game_id VARCHAR(50) PRIMARY KEY,
+                        guild_id VARCHAR(50) NOT NULL,
+                        channel_id VARCHAR(50) NOT NULL,
+                        status VARCHAR(20) DEFAULT 'active',
+                        result VARCHAR(10),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                self.db_connection.commit()
+                logger.info("Database tables created/verified successfully")
+                
+        except Exception as e:
+            logger.error(f"Error creating database tables: {e}")
     
     def _get_shown_questions(self, guild_id):
         """Get all questions that have been shown to this guild"""
@@ -267,7 +317,7 @@ class AntiSpamBot(commands.Bot):
         try:
             with self.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
-                    cursor.eecute(
+                    cursor.execute(
                         """INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak)         VALUES (%s, %s, %s, %s, %s) 
                            ON CONFLICT (guild_id, user_id) 
                            DO UPDATE SET cash = %s, last_daily = %s, daily_streak = %s""",

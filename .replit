@@ -27,3 +27,7 @@ args = "./restart_monitor.sh"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[ports]]
+localPort = 8080
+externalPort = 80

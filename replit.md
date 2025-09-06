@@ -15,6 +15,8 @@ Preferred communication style: Simple, everyday language.
 - **Spam Detection Engine**: Monitors message rates, duplicate content, mention abuse, and suspicious links using configurable thresholds
 - **Raid Protection**: Detects mass join events and implements automatic server lockdown mechanisms
 - **Moderation Tools**: Provides automated response systems with escalation management and quarantine capabilities
+- **Currency System**: Advanced economy system with massive denominations and user-to-user transfers
+- **Game Control**: Admin tools for manual game result control and player money management
 
 ### Configuration Management
 - **Per-Guild Configuration**: Independent settings stored as JSON files for each Discord server
@@ -47,10 +49,20 @@ Preferred communication style: Simple, everyday language.
 - **Bot Permissions**: Requires kick, ban, manage roles, and message management permissions
 - **Intents**: Uses member, message content, and guild intents for comprehensive monitoring
 
+### Enhanced Currency and Gaming System
+- **Extended Denominations**: Supports K (Thousand), M (Million), B (Billion), T (Trillion), Qa (Quadrillion), Qi (Quintillion), Sx (Sextillion)
+- **User-to-User Transfers**: `?give` command allows players to transfer money with full denomination support
+- **Admin Money Management**: `?clear` command for resetting player funds, `?moneyhack` for adding money
+- **Manual Game Control**: `?win` command allows admins to manually set Tai/Xiu game results
+- **All-In Betting**: Support for "all" keyword in betting and money transfers
+- **Automatic Data Persistence**: File-based backup system saves player data every 5 seconds
+
 ### File System Storage
 - **JSON Configuration**: Guild-specific settings stored in local JSON files
 - **Log Files**: Daily log rotation with structured logging format
 - **Config Directory**: Organized file structure for configurations and logs
+- **Backup System**: `user_cash_backup.json` stores player money data with automatic saves every 5 seconds
+- **Data Recovery**: Bot loads player data from backup file on startup, ensuring no data loss on restarts
 
 ### Python Libraries
 - **asyncio**: Handles concurrent Discord API operations and background tasks

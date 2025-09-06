@@ -400,12 +400,15 @@ class AntiSpamBot(commands.Bot):
         
         # Update database
         try:
-            with self._get_db_connection().cursor() as cursor:
+            connection = bot._get_db_connection()
+            if connection:
+                with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                self._get_db_connection().commit()
+                    connection.commit()
+                connection.close()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -417,7 +420,7 @@ class AntiSpamBot(commands.Bot):
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],
@@ -2361,7 +2364,7 @@ async def main():
         """Show cash leaderboard with pagination"""
         guild_id = str(ctx.guild.id)
         
-        if not self._get_db_connection():
+        if not bot._get_db_connection():
             embed = discord.Embed(
                 title="❌ Lỗi cơ sở dữ liệu",
                 description="Không thể kết nối với cơ sở dữ liệu.",
@@ -2371,7 +2374,9 @@ async def main():
             return
         
         try:
-            with self._get_db_connection().cursor() as cursor:
+            connection = bot._get_db_connection()
+            if connection:
+                with connection.cursor() as cursor:
                 # Get total count of users with cash
                 cursor.execute(
                     "SELECT COUNT(*) FROM user_cash WHERE guild_id = %s AND cash > 0",
@@ -2494,12 +2499,15 @@ async def main():
         
         # Store in database
         try:
-            with self._get_db_connection().cursor() as cursor:
+            connection = bot._get_db_connection()
+            if connection:
+                with connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
                     (game_id, guild_id, channel_id, end_time)
                 )
-                self._get_db_connection().commit()
+                    connection.commit()
+                connection.close()
         except Exception as e:
             logger.error(f"Error storing game in database: {e}")
         
@@ -2628,7 +2636,7 @@ async def main():
                 return
         
         # Deduct cash from user
-        success = self._update_user_cash(guild_id, user_id, -bet_amount, None, None)
+        success = bot._update_user_cash(guild_id, user_id, -bet_amount, None, None)
         
         if not success:
             embed = discord.Embed(
@@ -2653,12 +2661,15 @@ async def main():
         
         # Update database
         try:
-            with self._get_db_connection().cursor() as cursor:
+            connection = bot._get_db_connection()
+            if connection:
+                with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
                     (json.dumps(game_data['bets']), game_id)
                 )
-                self._get_db_connection().commit()
+                    connection.commit()
+                connection.close()
         except Exception as e:
             logger.error(f"Error updating game bets: {e}")
         
@@ -2759,12 +2770,15 @@ async def main():
         
         # Update database
         try:
-            with self._get_db_connection().cursor() as cursor:
+            connection = bot._get_db_connection()
+            if connection:
+                with connection.cursor() as cursor:
                 cursor.execute(
                     "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
                     (result, game_id)
                 )
-                self._get_db_connection().commit()
+                    connection.commit()
+                connection.close()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
         
@@ -2776,7 +2790,7 @@ async def main():
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],
@@ -2872,7 +2886,7 @@ async def main():
         new_cash = current_cash + amount
         
         # Update user's cash
-        success = self._update_user_cash(guild_id, user_id, new_cash, last_daily, streak)
+        success = bot._update_user_cash(guild_id, user_id, new_cash, last_daily, streak)
         
         if success:
             embed = discord.Embed(

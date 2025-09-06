@@ -2244,7 +2244,7 @@ async def main():
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
         
-        current_cash, last_daily, streak = self._get_user_cash(guild_id, user_id)
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         
         embed = discord.Embed(
             title="💰 Số dư tài khoản",
@@ -2277,7 +2277,7 @@ async def main():
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
         
-        current_cash, last_daily, streak = self._get_user_cash(guild_id, user_id)
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         today = datetime.utcnow().date()
         
         # Check if user already claimed today
@@ -2305,11 +2305,11 @@ async def main():
             new_streak = 0  # Reset streak if missed a day
         
         # Calculate reward
-        reward = self._calculate_daily_reward(new_streak)
+        reward = bot._calculate_daily_reward(new_streak)
         new_cash = current_cash + reward
         
         # Update database
-        success = self._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
+        success = bot._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
         
         if success:
             embed = discord.Embed(
@@ -2868,7 +2868,7 @@ async def main():
             return
         
         # Get current cash
-        current_cash, last_daily, streak = self._get_user_cash(guild_id, user_id)
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         new_cash = current_cash + amount
         
         # Update user's cash

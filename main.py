@@ -2897,6 +2897,328 @@ async def main():
             )
             await ctx.send(embed=embed)
     
+    @bot.command(name='give')
+    async def give_money(ctx, user: discord.Member = None, amount: str = None):
+        """Give money to another user"""
+        if not user or not amount:
+            embed = discord.Embed(
+                title="❌ Sai cú pháp!",
+                description="Cách sử dụng: `?give <@user> <số tiền>`\n\n**Ví dụ:**\n`?give @user 1000` - Tặng 1,000 cash\n`?give @user 5k` - Tặng 5,000 cash\n`?give @user 1.5m` - Tặng 1,500,000 cash\n`?give @user 2b` - Tặng 2,000,000,000 cash\n`?give @user 5t` - Tặng 5,000,000,000,000 cash\n`?give @user all` - Tặng tất cả tiền của bạn",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        guild_id = str(ctx.guild.id)
+        giver_id = str(ctx.author.id)
+        receiver_id = str(user.id)
+
+        # Don't let users give money to themselves
+        if giver_id == receiver_id:
+            embed = discord.Embed(
+                title="❌ Không thể tự tặng tiền cho mình!",
+                description="Bạn không thể tặng tiền cho chính mình.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Parse amount with support for k/m/b/t/qa/qi/sx suffixes and 'all'
+        def parse_amount(amount_str):
+            """Parse amount string with k/m/b/t/qa/qi/sx suffixes and 'all' for all available money"""
+            amount_str = amount_str.lower().strip()
+            
+            # Handle 'all' - return special value that we'll replace with actual cash
+            if amount_str == 'all':
+                return -1  # Special value to indicate "all money"
+            
+            multiplier = 1
+            
+            if amount_str.endswith('sx'):
+                multiplier = 1_000_000_000_000_000_000_000  # Sextillion
+                amount_str = amount_str[:-2]
+            elif amount_str.endswith('qi'):
+                multiplier = 1_000_000_000_000_000_000  # Quintillion
+                amount_str = amount_str[:-2]
+            elif amount_str.endswith('qa'):
+                multiplier = 1_000_000_000_000_000  # Quadrillion
+                amount_str = amount_str[:-2]
+            elif amount_str.endswith('t'):
+                multiplier = 1_000_000_000_000  # Trillion
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('b'):
+                multiplier = 1_000_000_000  # Billion
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('m'):
+                multiplier = 1_000_000  # Million
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('k'):
+                multiplier = 1_000  # Thousand
+                amount_str = amount_str[:-1]
+            
+            try:
+                base_amount = float(amount_str)
+                if base_amount <= 0:
+                    raise ValueError()
+                return int(base_amount * multiplier)
+            except (ValueError, OverflowError):
+                raise ValueError()
+
+        try:
+            give_amount = parse_amount(amount)
+        except ValueError:
+            embed = discord.Embed(
+                title="❌ Số tiền không hợp lệ!",
+                description="Vui lòng nhập số tiền hợp lệ.\n\n**Ví dụ:** `1000`, `5k`, `1.5m`, `2b`, `5t`, `1qa`, `2qi`, `1sx`, `all`",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Get giver's current cash
+        giver_cash, giver_daily, giver_streak = bot._get_user_cash(guild_id, giver_id)
+
+        # Handle 'all' - give all of giver's money
+        if give_amount == -1:
+            if giver_cash <= 0:
+                embed = discord.Embed(
+                    title="💸 Không có tiền để tặng!",
+                    description="Bạn không có tiền để tặng cho ai.\n\nDùng `?daily` để nhận thưởng hàng ngày!",
+                    color=0xff4444
+                )
+                await ctx.send(embed=embed)
+                return
+            give_amount = giver_cash
+
+        # Check if giver has enough money
+        if giver_cash < give_amount:
+            embed = discord.Embed(
+                title="💸 Không đủ tiền!",
+                description=f"Bạn chỉ có **{giver_cash:,} cash** nhưng muốn tặng **{give_amount:,} cash**.\n\nDùng `?money` để kiểm tra số dư.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Get receiver's current cash
+        receiver_cash, receiver_daily, receiver_streak = bot._get_user_cash(guild_id, receiver_id)
+
+        # Update both users' cash
+        new_giver_cash = giver_cash - give_amount
+        new_receiver_cash = receiver_cash + give_amount
+
+        # Update giver's cash (subtract)
+        success1 = bot._update_user_cash(guild_id, giver_id, new_giver_cash, giver_daily, giver_streak)
+        # Update receiver's cash (add)
+        success2 = bot._update_user_cash(guild_id, receiver_id, new_receiver_cash, receiver_daily, receiver_streak)
+
+        if success1 and success2:
+            embed = discord.Embed(
+                title="💝 Chuyển tiền thành công!",
+                description=f"**{ctx.author.mention}** đã tặng tiền cho **{user.mention}**",
+                color=0x00ff88
+            )
+            embed.add_field(
+                name="💰 Số tiền tặng",
+                value=f"**{give_amount:,} cash**",
+                inline=True
+            )
+            embed.add_field(
+                name="👤 Người tặng",
+                value=f"{ctx.author.mention}\n💳 Còn lại: **{new_giver_cash:,} cash**",
+                inline=True
+            )
+            embed.add_field(
+                name="🎁 Người nhận",
+                value=f"{user.mention}\n💳 Tổng cộng: **{new_receiver_cash:,} cash**",
+                inline=True
+            )
+            embed.set_footer(text="Cảm ơn bạn đã chia sẻ!")
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title="❌ Lỗi hệ thống",
+                description="Không thể thực hiện giao dịch. Vui lòng thử lại sau.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+
+    @bot.command(name='clear')
+    @commands.has_permissions(administrator=True)
+    async def clear_money(ctx, user: discord.Member = None):
+        """Reset a user's money to 0 (Admin only)"""
+        if not user:
+            embed = discord.Embed(
+                title="❌ Sai cú pháp!",
+                description="Cách sử dụng: `?clear <@user>`\n\n**Ví dụ:**\n`?clear @user` - Reset tiền của user về 0",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        guild_id = str(ctx.guild.id)
+        user_id = str(user.id)
+
+        # Get user's current cash
+        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
+
+        # Reset user's cash to 0
+        success = bot._update_user_cash(guild_id, user_id, 0, last_daily, streak)
+
+        if success:
+            embed = discord.Embed(
+                title="🗑️ Reset tiền thành công!",
+                description=f"**Admin {ctx.author.mention}** đã reset tiền của **{user.mention}**",
+                color=0x00ff88
+            )
+            embed.add_field(
+                name="💰 Tiền trước đó",
+                value=f"**{current_cash:,} cash**",
+                inline=True
+            )
+            embed.add_field(
+                name="💳 Tiền hiện tại",
+                value="**0 cash**",
+                inline=True
+            )
+            embed.set_footer(text="Chỉ Admin mới có thể sử dụng lệnh này!")
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title="❌ Lỗi hệ thống",
+                description="Không thể reset tiền của người dùng. Vui lòng thử lại sau.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+
+    @bot.command(name='win')
+    @commands.has_permissions(administrator=True)
+    async def set_winner(ctx, result: str = None):
+        """Manually set the winner of the current game (Admin only)"""
+        if not result:
+            embed = discord.Embed(
+                title="❌ Sai cú pháp!",
+                description="Cách sử dụng: `?win <tai/xiu>`\n\n**Ví dụ:**\n`?win tai` - Đặt kết quả là Tài\n`?win xiu` - Đặt kết quả là Xỉu",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        guild_id = str(ctx.guild.id)
+        channel_id = str(ctx.channel.id)
+
+        # Validate result
+        result = result.lower()
+        if result not in ['tai', 'xiu']:
+            embed = discord.Embed(
+                title="❌ Kết quả không hợp lệ!",
+                description="Bạn chỉ có thể chọn **tai** hoặc **xiu**",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Check if there's an active game in this channel
+        active_game = None
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
+                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
+                    active_game = (game_id, game_data)
+                    break
+
+        if not active_game:
+            embed = discord.Embed(
+                title="❌ Không có game nào đang diễn ra!",
+                description="Không có game Tài Xỉu nào đang diễn ra trong kênh này. Dùng `?tx` để bắt đầu game mới.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        game_id, game_data = active_game
+
+        # Set the result manually
+        game_data['result'] = result
+        game_data['status'] = 'ended'
+
+        # Update database
+        try:
+            connection = bot._get_db_connection()
+            if connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
+                        (result, game_id)
+                    )
+                    connection.commit()
+                connection.close()
+        except Exception as e:
+            logger.error(f"Error updating game result: {e}")
+
+        # Show admin action first
+        embed = discord.Embed(
+            title="⚙️ Admin đã đặt kết quả!",
+            description=f"**Admin {ctx.author.mention}** đã đặt kết quả game là **{result.upper()}**",
+            color=0xffa500
+        )
+        embed.set_footer(text="Game sẽ kết thúc ngay lập tức...")
+        await ctx.send(embed=embed)
+
+        # Process the game ending with the set result
+        winners = []
+        losers = []
+        total_winners = 0
+        total_losers = 0
+        total_winnings = 0
+
+        for bet in game_data['bets']:
+            if bet['side'] == result:
+                winners.append(bet)
+                total_winners += 1
+                total_winnings += bet['amount']
+            else:
+                losers.append(bet)
+                total_losers += 1
+
+        # Distribute winnings (2x payout)
+        for bet in winners:
+            user_id = bet['user_id']
+            winnings = bet['amount'] * 2  # 2x payout for winning bets
+            bot._update_user_cash(guild_id, user_id, winnings)
+
+        # Create result embed
+        result_embed = discord.Embed(
+            title="🎲 Kết quả game Tài Xỉu!",
+            description=f"**Kết quả:** {result.upper()} {'🔺' if result == 'tai' else '🔻'}\n\n*Kết quả được đặt bởi Admin*",
+            color=0x00ff88 if result == 'tai' else 0xff6b6b
+        )
+        
+        result_embed.add_field(
+            name="🏆 Người thắng",
+            value=f"**{total_winners}** người thắng\n💰 Tổng thưởng: **{total_winnings * 2:,} cash**",
+            inline=True
+        )
+        
+        result_embed.add_field(
+            name="💸 Người thua",
+            value=f"**{total_losers}** người thua\n💔 Mất: **{sum(bet['amount'] for bet in losers):,} cash**",
+            inline=True
+        )
+        
+        result_embed.add_field(
+            name="💡 Lưu ý",
+            value="Người thắng nhận lại 2x số tiền đã cược!\nDùng `?tx` để bắt đầu game mới.",
+            inline=False
+        )
+
+        await ctx.send(embed=result_embed)
+
+        # Clean up the game
+        if guild_id in bot.overunder_games and game_id in bot.overunder_games[guild_id]:
+            del bot.overunder_games[guild_id][game_id]
+            if not bot.overunder_games[guild_id]:
+                del bot.overunder_games[guild_id]
+    
     # Error handling
     @bot.event
     async def on_command_error(ctx, error):

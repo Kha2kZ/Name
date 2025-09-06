@@ -334,7 +334,13 @@ class AntiSpamBot(commands.Bot):
                 if result:
                     return result[0], result[1], result[2]
                 else:
-                    return 0, None, 0
+                    # Create new user with starting cash instead of returning 0
+                    cursor.execute(
+                        "INSERT INTO user_cash (guild_id, user_id, cash) VALUES (%s, %s, %s)",
+                        (str(guild_id), str(user_id), 1000)
+                    )
+                    connection.commit()
+                    return 1000, None, 0
         except Exception as e:
             logger.error(f"Error getting user cash: {e}")
             return 0, None, 0
@@ -2223,7 +2229,13 @@ async def main():
                 if result:
                     return result[0], result[1], result[2]
                 else:
-                    return 0, None, 0
+                    # Create new user with starting cash instead of returning 0
+                    cursor.execute(
+                        "INSERT INTO user_cash (guild_id, user_id, cash) VALUES (%s, %s, %s)",
+                        (str(guild_id), str(user_id), 1000)
+                    )
+                    connection.commit()
+                    return 1000, None, 0
         except Exception as e:
             logger.error(f"Error getting user cash: {e}")
             return 0, None, 0
@@ -2582,7 +2594,7 @@ async def main():
         if not side or not amount:
             embed = discord.Embed(
                 title="❌ Sai cú pháp!",
-                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000` - Cược 1,000 cash\n`?cuoc xiu 5k` - Cược 5,000 cash\n`?cuoc tai 1.5m` - Cược 1,500,000 cash\n`?cuoc xiu 2b` - Cược 2,000,000,000 cash",
+                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000` - Cược 1,000 cash\n`?cuoc xiu 5k` - Cược 5,000 cash\n`?cuoc tai 1.5m` - Cược 1,500,000 cash\n`?cuoc xiu 2b` - Cược 2,000,000,000 cash\n`?cuoc tai all` - Cược tất cả tiền",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2603,10 +2615,15 @@ async def main():
             await ctx.send(embed=embed)
             return
         
-        # Validate amount with support for k/m/b suffixes
+        # Validate amount with support for k/m/b suffixes and 'all'
         def parse_amount(amount_str):
-            """Parse amount string with k/m/b suffixes"""
+            """Parse amount string with k/m/b suffixes and 'all' for all available money"""
             amount_str = amount_str.lower().strip()
+            
+            # Handle 'all' - return special value that we'll replace with actual cash
+            if amount_str == 'all':
+                return -1  # Special value to indicate "all money"
+            
             multiplier = 1
             
             if amount_str.endswith('k'):
@@ -2632,11 +2649,24 @@ async def main():
         except ValueError:
             embed = discord.Embed(
                 title="❌ Số tiền không hợp lệ!",
-                description="Vui lòng nhập số tiền hợp lệ.\n\n**Ví dụ:** `1000`, `5k`, `1.5m`, `2b`",
+                description="Vui lòng nhập số tiền hợp lệ.\n\n**Ví dụ:** `1000`, `5k`, `1.5m`, `2b`, `all`",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
             return
+        
+        # Handle 'all' - get user's current cash and bet all of it
+        if bet_amount == -1:
+            current_cash, _, _ = bot._get_user_cash(guild_id, user_id)
+            if current_cash <= 0:
+                embed = discord.Embed(
+                    title="💸 Không có tiền để cược!",
+                    description="Bạn không có tiền để đặt cược.\n\nDùng `?daily` để nhận thưởng hàng ngày!",
+                    color=0xff4444
+                )
+                await ctx.send(embed=embed)
+                return
+            bet_amount = current_cash
         
         # Check if there's an active game in this channel
         active_game = None

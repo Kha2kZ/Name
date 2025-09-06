@@ -376,9 +376,10 @@ class AntiSpamBot(commands.Bot):
             # Continue increasing by 400 per day after day 3
             return 1500 + (400 * (streak - 2))
     
-    async def _end_overunder_game(self, guild_id, game_id):
+    async def _end_overunder_game(self, guild_id, game_id, instant_stop=False):
         """End the Over/Under game and distribute winnings"""
-        await asyncio.sleep(150)  # Wait for game duration
+        if not instant_stop:
+            await asyncio.sleep(150)  # Wait for game duration
         
         if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
             return
@@ -391,7 +392,7 @@ class AntiSpamBot(commands.Bot):
         
         # Get the channel
         channel = self.get_channel(int(game_data['channel_id']))
-        if not channel:
+        if not channel or not hasattr(channel, 'send'):
             return
         
         # Generate random result (50/50 chance)
@@ -400,7 +401,7 @@ class AntiSpamBot(commands.Bot):
         
         # Update database
         try:
-            connection = bot._get_db_connection()
+            connection = self._get_db_connection()
             if connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
@@ -420,7 +421,7 @@ class AntiSpamBot(commands.Bot):
             if bet['side'] == result:
                 # Winner - give back double the bet
                 winnings = bet['amount'] * 2
-                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
+                self._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
                 winners.append({
                     'username': bet['username'],
                     'amount': bet['amount'],
@@ -2472,8 +2473,8 @@ async def main():
         game_id = f"{guild_id}_{channel_id}_{int(datetime.utcnow().timestamp())}"
         
         # Check if there's already an active game in this channel
-        if guild_id in self.overunder_games:
-            for existing_game_id, game_data in self.overunder_games[guild_id].items():
+        if guild_id in bot.overunder_games:
+            for existing_game_id, game_data in bot.overunder_games[guild_id].items():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     embed = discord.Embed(
                         title="⚠️ Đã có game đang diễn ra!",
@@ -2486,10 +2487,10 @@ async def main():
         # Create new game
         end_time = datetime.utcnow() + timedelta(seconds=150)
         
-        if guild_id not in self.overunder_games:
-            self.overunder_games[guild_id] = {}
+        if guild_id not in bot.overunder_games:
+            bot.overunder_games[guild_id] = {}
         
-        self.overunder_games[guild_id][game_id] = {
+        bot.overunder_games[guild_id][game_id] = {
             'channel_id': channel_id,
             'end_time': end_time,
             'bets': [],
@@ -2541,10 +2542,10 @@ async def main():
         await ctx.send(embed=embed)
         
         # Schedule game end
-        asyncio.create_task(_end_overunder_game(guild_id, game_id))
+        asyncio.create_task(bot._end_overunder_game(guild_id, game_id))
     
     @bot.command(name='cuoc')
-    async def place_bet(ctx, side: str = None, amount: str = None):
+    async def place_bet(ctx, side=None, amount=None):
         """Place a bet in the Tai/Xiu game"""
         if not side or not amount:
             embed = discord.Embed(
@@ -2586,8 +2587,8 @@ async def main():
         
         # Check if there's an active game in this channel
         active_game = None
-        if guild_id in self.overunder_games:
-            for game_id, game_data in self.overunder_games[guild_id].items():
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     active_game = (game_id, game_data)
                     break
@@ -2719,8 +2720,8 @@ async def main():
         
         # Find active game in this channel
         active_game_id = None
-        if guild_id in self.overunder_games:
-            for game_id, game_data in self.overunder_games[guild_id].items():
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     active_game_id = game_id
                     break
@@ -2743,110 +2744,8 @@ async def main():
         await ctx.send(embed=embed)
         
         # End game immediately
-        await _end_overunder_game(guild_id, active_game_id, instant_stop=True)
+        await bot._end_overunder_game(guild_id, active_game_id, instant_stop=True)
     
-    async def _end_overunder_game(guild_id, game_id, instant_stop=False):
-        """End the Tai/Xiu game and distribute winnings"""
-        if not instant_stop:
-            await asyncio.sleep(150)  # Wait for game duration
-        
-        if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
-            return
-        
-        game_data = self.overunder_games[guild_id][game_id]
-        if game_data['status'] != 'active':
-            return
-        
-        game_data['status'] = 'ended'
-        
-        # Get the channel
-        channel = self.get_channel(int(game_data['channel_id']))
-        if not channel:
-            return
-        
-        # Generate random result (50/50 chance)
-        result = random.choice(['tai', 'xiu'])
-        game_data['result'] = result
-        
-        # Update database
-        try:
-            connection = bot._get_db_connection()
-            if connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
-                        (result, game_id)
-                    )
-                    connection.commit()
-                connection.close()
-        except Exception as e:
-            logger.error(f"Error updating game result: {e}")
-        
-        # Process winnings
-        winners = []
-        losers = []
-        
-        for bet in game_data['bets']:
-            if bet['side'] == result:
-                # Winner - give back double the bet
-                winnings = bet['amount'] * 2
-                bot._update_user_cash(guild_id, bet['user_id'], winnings, None, None)
-                winners.append({
-                    'username': bet['username'],
-                    'amount': bet['amount'],
-                    'winnings': winnings
-                })
-            else:
-                # Loser - they already lost their bet when placing it
-                losers.append({
-                    'username': bet['username'],
-                    'amount': bet['amount']
-                })
-        
-        # Create result embed
-        embed = discord.Embed(
-            title="🎲 Kết Quả Game Over/Under!",
-            description=f"**{result.upper()} THẮNG!** 🎉",
-            color=0x00ff88 if winners else 0xff4444
-        )
-        
-        if winners:
-            winners_text = "\n".join([f"🏆 **{w['username']}** - Cược {w['amount']:,} → Nhận **{w['winnings']:,} cash**" for w in winners])
-            embed.add_field(
-                name=f"✅ Người thắng ({len(winners)})",
-                value=winners_text,
-                inline=False
-            )
-        
-        if losers:
-            losers_text = "\n".join([f"💸 **{l['username']}** - Mất {l['amount']:,} cash" for l in losers])
-            embed.add_field(
-                name=f"❌ Người thua ({len(losers)})",
-                value=losers_text,
-                inline=False
-            )
-        
-        if not game_data['bets']:
-            embed.add_field(
-                name="🤷‍♂️ Không có ai tham gia",
-                value="Không có cược nào được đặt trong game này.",
-                inline=False
-            )
-        
-        embed.add_field(
-            name="🎮 Game mới",
-            value="Dùng `?tx` để bắt đầu game Over/Under mới!",
-            inline=False
-        )
-        
-        embed.set_footer(text=f"Game ID: {game_id} • Cảm ơn bạn đã tham gia! 🎉")
-        
-        await channel.send(embed=embed)
-        
-        # Clean up game data
-        del self.overunder_games[guild_id][game_id]
-        if not self.overunder_games[guild_id]:  # Remove guild if no games left
-            del self.overunder_games[guild_id]
 
     @bot.command(name='reset_questions')
     @commands.has_permissions(administrator=True)

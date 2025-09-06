@@ -112,6 +112,9 @@ class AntiSpamBot(commands.Bot):
         # Over/Under game tracking
         self.overunder_games = {}
         
+        # In-memory cash storage when database isn't available
+        self.user_cash_memory = {}
+        
     def _get_db_connection(self):
         """Get a fresh database connection for operations"""
         if not self.database_url:
@@ -312,7 +315,14 @@ class AntiSpamBot(commands.Bot):
         """Get user's cash amount and daily streak info"""
         connection = self._get_db_connection()
         if not connection:
-            return 0, None, 0
+            # Use in-memory storage when database isn't available
+            key = f"{guild_id}_{user_id}"
+            if key in self.user_cash_memory:
+                data = self.user_cash_memory[key]
+                return data.get('cash', 1000), data.get('last_daily'), data.get('daily_streak', 0)
+            else:
+                # Give new users some starting cash
+                return 1000, None, 0
         
         try:
             with connection.cursor() as cursor:
@@ -335,7 +345,22 @@ class AntiSpamBot(commands.Bot):
         """Update user's cash amount and daily streak"""
         connection = self._get_db_connection()
         if not connection:
-            return False
+            # Use in-memory storage when database isn't available
+            key = f"{guild_id}_{user_id}"
+            if key not in self.user_cash_memory:
+                self.user_cash_memory[key] = {'cash': 1000, 'last_daily': None, 'daily_streak': 0}
+            
+            if last_daily is not None and daily_streak is not None:
+                # Set absolute values (for daily rewards)
+                self.user_cash_memory[key].update({
+                    'cash': cash_amount,
+                    'last_daily': last_daily,
+                    'daily_streak': daily_streak
+                })
+            else:
+                # Add to existing cash (for bets/winnings)
+                self.user_cash_memory[key]['cash'] += cash_amount
+            return True
         
         try:
             with connection.cursor() as cursor:
@@ -2179,7 +2204,14 @@ async def main():
         """Get user's cash amount and daily streak info"""
         connection = self._get_db_connection()
         if not connection:
-            return 0, None, 0
+            # Use in-memory storage when database isn't available
+            key = f"{guild_id}_{user_id}"
+            if key in self.user_cash_memory:
+                data = self.user_cash_memory[key]
+                return data.get('cash', 1000), data.get('last_daily'), data.get('daily_streak', 0)
+            else:
+                # Give new users some starting cash
+                return 1000, None, 0
         
         try:
             with connection.cursor() as cursor:
@@ -2550,7 +2582,7 @@ async def main():
         if not side or not amount:
             embed = discord.Embed(
                 title="❌ Sai cú pháp!",
-                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000`\n`?cuoc xiu 500`",
+                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000` - Cược 1,000 cash\n`?cuoc xiu 5k` - Cược 5,000 cash\n`?cuoc tai 1.5m` - Cược 1,500,000 cash\n`?cuoc xiu 2b` - Cược 2,000,000,000 cash",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2571,15 +2603,36 @@ async def main():
             await ctx.send(embed=embed)
             return
         
-        # Validate amount
-        try:
-            bet_amount = int(amount)
-            if bet_amount <= 0:
+        # Validate amount with support for k/m/b suffixes
+        def parse_amount(amount_str):
+            """Parse amount string with k/m/b suffixes"""
+            amount_str = amount_str.lower().strip()
+            multiplier = 1
+            
+            if amount_str.endswith('k'):
+                multiplier = 1_000
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('m'):
+                multiplier = 1_000_000
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('b'):
+                multiplier = 1_000_000_000
+                amount_str = amount_str[:-1]
+            
+            try:
+                base_amount = float(amount_str)
+                if base_amount <= 0:
+                    raise ValueError()
+                return int(base_amount * multiplier)
+            except (ValueError, OverflowError):
                 raise ValueError()
+        
+        try:
+            bet_amount = parse_amount(amount)
         except ValueError:
             embed = discord.Embed(
                 title="❌ Số tiền không hợp lệ!",
-                description="Vui lòng nhập một số nguyên dương.",
+                description="Vui lòng nhập số tiền hợp lệ.\n\n**Ví dụ:** `1000`, `5k`, `1.5m`, `2b`",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2660,19 +2713,8 @@ async def main():
         }
         game_data['bets'].append(bet_data)
         
-        # Update database
-        try:
-            connection = bot._get_db_connection()
-            if connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
-                        (json.dumps(game_data['bets']), game_id)
-                    )
-                    connection.commit()
-                connection.close()
-        except Exception as e:
-            logger.error(f"Error updating game bets: {e}")
+        # Note: Bets are stored in memory during the game
+        # Final results are saved to database when game ends
         
         # Beautiful success embed
         embed = discord.Embed(

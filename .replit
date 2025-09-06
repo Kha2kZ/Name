@@ -15,15 +15,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Discord Bot Monitor"
+args = "Discord Bot"
 
 [[workflows.workflow]]
-name = "Discord Bot Monitor"
+name = "Discord Bot"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "./restart_monitor.sh"
+args = "python main.py"
 
 [workflows.workflow.metadata]
 outputType = "console"

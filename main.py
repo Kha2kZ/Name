@@ -403,10 +403,10 @@ class AntiSpamBot(commands.Bot):
             connection = bot._get_db_connection()
             if connection:
                 with connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
-                    (result, game_id)
-                )
+                    cursor.execute(
+                        "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
+                        (result, game_id)
+                    )
                     connection.commit()
                 connection.close()
         except Exception as e:
@@ -2377,12 +2377,12 @@ async def main():
             connection = bot._get_db_connection()
             if connection:
                 with connection.cursor() as cursor:
-                # Get total count of users with cash
-                cursor.execute(
-                    "SELECT COUNT(*) FROM user_cash WHERE guild_id = %s AND cash > 0",
-                    (guild_id,)
-                )
-                total_users = cursor.fetchone()[0]
+                    # Get total count of users with cash
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM user_cash WHERE guild_id = %s AND cash > 0",
+                        (guild_id,)
+                    )
+                    total_users = cursor.fetchone()[0]
                 
                 if total_users == 0:
                     embed = discord.Embed(
@@ -2502,10 +2502,10 @@ async def main():
             connection = bot._get_db_connection()
             if connection:
                 with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
-                    (game_id, guild_id, channel_id, end_time)
-                )
+                    cursor.execute(
+                        "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
+                        (game_id, guild_id, channel_id, end_time)
+                    )
                     connection.commit()
                 connection.close()
         except Exception as e:
@@ -2664,10 +2664,10 @@ async def main():
             connection = bot._get_db_connection()
             if connection:
                 with connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
-                    (json.dumps(game_data['bets']), game_id)
-                )
+                    cursor.execute(
+                        "UPDATE overunder_games SET bets = %s WHERE game_id = %s",
+                        (json.dumps(game_data['bets']), game_id)
+                    )
                     connection.commit()
                 connection.close()
         except Exception as e:
@@ -2773,10 +2773,10 @@ async def main():
             connection = bot._get_db_connection()
             if connection:
                 with connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
-                    (result, game_id)
-                )
+                    cursor.execute(
+                        "UPDATE overunder_games SET result = %s, status = 'ended' WHERE game_id = %s",
+                        (result, game_id)
+                    )
                     connection.commit()
                 connection.close()
         except Exception as e:

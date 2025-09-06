@@ -128,7 +128,23 @@ class AntiSpamBot(commands.Bot):
             if os.path.exists(self.backup_file_path):
                 with open(self.backup_file_path, 'r', encoding='utf-8') as f:
                     backup_data = json.load(f)
-                    self.user_cash_memory = backup_data.get('user_cash_memory', {})
+                    raw_user_data = backup_data.get('user_cash_memory', {})
+                    
+                    # Convert date strings back to date objects
+                    self.user_cash_memory = {}
+                    for key, data in raw_user_data.items():
+                        processed_data = data.copy()
+                        
+                        # Convert last_daily string back to date object
+                        if 'last_daily' in processed_data and processed_data['last_daily']:
+                            try:
+                                if isinstance(processed_data['last_daily'], str):
+                                    processed_data['last_daily'] = datetime.strptime(processed_data['last_daily'], '%Y-%m-%d').date()
+                            except (ValueError, TypeError):
+                                processed_data['last_daily'] = None
+                                
+                        self.user_cash_memory[key] = processed_data
+                    
                     logger.info(f"Loaded backup data for {len(self.user_cash_memory)} users from {self.backup_file_path}")
             else:
                 logger.info("No backup file found, starting with empty memory")
@@ -140,14 +156,27 @@ class AntiSpamBot(commands.Bot):
     def _save_backup_data(self):
         """Save current user cash data to backup file"""
         try:
+            # Convert date objects to strings for JSON serialization
+            serializable_data = {}
+            for key, data in self.user_cash_memory.items():
+                processed_data = data.copy()
+                
+                # Convert date objects to ISO string format
+                if 'last_daily' in processed_data and processed_data['last_daily']:
+                    if hasattr(processed_data['last_daily'], 'isoformat'):
+                        processed_data['last_daily'] = processed_data['last_daily'].isoformat()
+                        
+                serializable_data[key] = processed_data
+            
             backup_data = {
-                'user_cash_memory': self.user_cash_memory,
+                'user_cash_memory': serializable_data,
                 'last_backup': datetime.utcnow().isoformat()
             }
+            
             # Create temporary file first, then rename for atomic write
             temp_file = f"{self.backup_file_path}.tmp"
             with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(backup_data, f, indent=2, ensure_ascii=False, default=str)
+                json.dump(backup_data, f, indent=2, ensure_ascii=False)
             
             # Atomic rename to prevent corruption
             os.rename(temp_file, self.backup_file_path)

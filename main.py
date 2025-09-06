@@ -115,6 +115,57 @@ class AntiSpamBot(commands.Bot):
         # In-memory cash storage when database isn't available
         self.user_cash_memory = {}
         
+        # File-based backup system
+        self.backup_file_path = "user_cash_backup.json"
+        self._load_backup_data()
+        
+        # Start background backup task
+        self.backup_task = None
+    
+    def _load_backup_data(self):
+        """Load user cash data from backup file on startup"""
+        try:
+            if os.path.exists(self.backup_file_path):
+                with open(self.backup_file_path, 'r', encoding='utf-8') as f:
+                    backup_data = json.load(f)
+                    self.user_cash_memory = backup_data.get('user_cash_memory', {})
+                    logger.info(f"Loaded backup data for {len(self.user_cash_memory)} users from {self.backup_file_path}")
+            else:
+                logger.info("No backup file found, starting with empty memory")
+                self.user_cash_memory = {}
+        except Exception as e:
+            logger.error(f"Error loading backup data: {e}")
+            self.user_cash_memory = {}
+    
+    def _save_backup_data(self):
+        """Save current user cash data to backup file"""
+        try:
+            backup_data = {
+                'user_cash_memory': self.user_cash_memory,
+                'last_backup': datetime.utcnow().isoformat()
+            }
+            # Create temporary file first, then rename for atomic write
+            temp_file = f"{self.backup_file_path}.tmp"
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(backup_data, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Atomic rename to prevent corruption
+            os.rename(temp_file, self.backup_file_path)
+            
+        except Exception as e:
+            logger.error(f"Error saving backup data: {e}")
+    
+    async def _backup_data_loop(self):
+        """Background task that saves data every 5 seconds"""
+        while True:
+            try:
+                await asyncio.sleep(5)  # Save every 5 seconds
+                self._save_backup_data()
+                logger.debug("Auto-saved user cash data to backup file")
+            except Exception as e:
+                logger.error(f"Error in backup loop: {e}")
+                await asyncio.sleep(30)  # Wait longer if there's an error
+        
     def _get_db_connection(self):
         """Get a fresh database connection for operations"""
         if not self.database_url:
@@ -366,6 +417,9 @@ class AntiSpamBot(commands.Bot):
             else:
                 # Add to existing cash (for bets/winnings)
                 self.user_cash_memory[key]['cash'] += cash_amount
+            
+            # Save backup immediately when cash is updated
+            self._save_backup_data()
             return True
         
         try:
@@ -520,6 +574,11 @@ class AntiSpamBot(commands.Bot):
         """Called when the bot is ready"""
         logger.info(f'{self.user} has connected to Discord!')
         logger.info(f'Bot is in {len(self.guilds)} guilds')
+        
+        # Start the backup task if not already running
+        if self.backup_task is None or self.backup_task.done():
+            self.backup_task = asyncio.create_task(self._backup_data_loop())
+            logger.info("Started backup data loop - saving user data every 5 seconds")
         
         # Set bot status
         await self.change_presence(

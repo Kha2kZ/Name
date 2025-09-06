@@ -2594,7 +2594,7 @@ async def main():
         if not side or not amount:
             embed = discord.Embed(
                 title="❌ Sai cú pháp!",
-                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000` - Cược 1,000 cash\n`?cuoc xiu 5k` - Cược 5,000 cash\n`?cuoc tai 1.5m` - Cược 1,500,000 cash\n`?cuoc xiu 2b` - Cược 2,000,000,000 cash\n`?cuoc tai all` - Cược tất cả tiền",
+                description="Cách sử dụng: `?cuoc <tai/xiu> <số tiền>`\n\n**Ví dụ:**\n`?cuoc tai 1000` - Cược 1,000 cash\n`?cuoc xiu 5k` - Cược 5,000 cash\n`?cuoc tai 1.5m` - Cược 1,500,000 cash\n`?cuoc xiu 2b` - Cược 2,000,000,000 cash\n`?cuoc tai 5t` - Cược 5,000,000,000,000 cash\n`?cuoc xiu 1qa` - Cược 1,000,000,000,000,000 cash\n`?cuoc tai 2qi` - Cược 2,000,000,000,000,000,000 cash\n`?cuoc xiu 1sx` - Cược 1,000,000,000,000,000,000,000 cash\n`?cuoc tai all` - Cược tất cả tiền",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2615,9 +2615,9 @@ async def main():
             await ctx.send(embed=embed)
             return
         
-        # Validate amount with support for k/m/b suffixes and 'all'
+        # Validate amount with support for k/m/b/t/qa/qi/sx suffixes and 'all'
         def parse_amount(amount_str):
-            """Parse amount string with k/m/b suffixes and 'all' for all available money"""
+            """Parse amount string with k/m/b/t/qa/qi/sx suffixes and 'all' for all available money"""
             amount_str = amount_str.lower().strip()
             
             # Handle 'all' - return special value that we'll replace with actual cash
@@ -2626,14 +2626,26 @@ async def main():
             
             multiplier = 1
             
-            if amount_str.endswith('k'):
-                multiplier = 1_000
-                amount_str = amount_str[:-1]
-            elif amount_str.endswith('m'):
-                multiplier = 1_000_000
+            if amount_str.endswith('sx'):
+                multiplier = 1_000_000_000_000_000_000_000  # Sextillion
+                amount_str = amount_str[:-2]
+            elif amount_str.endswith('qi'):
+                multiplier = 1_000_000_000_000_000_000  # Quintillion
+                amount_str = amount_str[:-2]
+            elif amount_str.endswith('qa'):
+                multiplier = 1_000_000_000_000_000  # Quadrillion
+                amount_str = amount_str[:-2]
+            elif amount_str.endswith('t'):
+                multiplier = 1_000_000_000_000  # Trillion
                 amount_str = amount_str[:-1]
             elif amount_str.endswith('b'):
-                multiplier = 1_000_000_000
+                multiplier = 1_000_000_000  # Billion
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('m'):
+                multiplier = 1_000_000  # Million
+                amount_str = amount_str[:-1]
+            elif amount_str.endswith('k'):
+                multiplier = 1_000  # Thousand
                 amount_str = amount_str[:-1]
             
             try:
@@ -2649,7 +2661,7 @@ async def main():
         except ValueError:
             embed = discord.Embed(
                 title="❌ Số tiền không hợp lệ!",
-                description="Vui lòng nhập số tiền hợp lệ.\n\n**Ví dụ:** `1000`, `5k`, `1.5m`, `2b`, `all`",
+                description="Vui lòng nhập số tiền hợp lệ.\n\n**Ví dụ:** `1000`, `5k`, `1.5m`, `2b`, `5t`, `1qa`, `2qi`, `1sx`, `all`",
                 color=0xff4444
             )
             await ctx.send(embed=embed)

@@ -156,6 +156,11 @@ class AntiSpamBot(commands.Bot):
     def _save_backup_data(self):
         """Save current user cash data to backup file"""
         try:
+            # Don't save empty data - this prevents overwriting existing backups with empty data
+            if not self.user_cash_memory:
+                logger.debug("No user data to backup, skipping save")
+                return
+            
             # Convert date objects to strings for JSON serialization
             serializable_data = {}
             for key, data in self.user_cash_memory.items():
@@ -180,6 +185,7 @@ class AntiSpamBot(commands.Bot):
             
             # Atomic rename to prevent corruption
             os.rename(temp_file, self.backup_file_path)
+            logger.debug(f"Successfully saved backup data for {len(self.user_cash_memory)} users")
             
         except Exception as e:
             logger.error(f"Error saving backup data: {e}")

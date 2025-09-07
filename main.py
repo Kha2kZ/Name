@@ -2503,95 +2503,108 @@ async def main():
         """Show cash leaderboard with pagination"""
         guild_id = str(ctx.guild.id)
         
-        if not bot._get_db_connection():
-            embed = discord.Embed(
-                title="❌ Lỗi cơ sở dữ liệu",
-                description="Không thể kết nối với cơ sở dữ liệu.",
-                color=0xff4444
-            )
-            await ctx.send(embed=embed)
-            return
-        
         try:
+            # Try database first, fall back to memory if database unavailable
             connection = bot._get_db_connection()
+            users_data = []
+            
             if connection:
+                # Use database data
                 with connection.cursor() as cursor:
-                    # Get total count of users with cash
                     cursor.execute(
-                        "SELECT COUNT(*) FROM user_cash WHERE guild_id = %s AND cash > 0",
+                        """SELECT user_id, cash, daily_streak 
+                           FROM user_cash 
+                           WHERE guild_id = %s AND cash > 0 
+                           ORDER BY cash DESC""",
                         (guild_id,)
                     )
-                    total_users = cursor.fetchone()[0]
+                    results = cursor.fetchall()
+                    users_data = [(user_id, cash, streak) for user_id, cash, streak in results]
+                connection.close()
+            else:
+                # Use in-memory data when database is unavailable
+                for key, data in bot.user_cash_memory.items():
+                    if key.startswith(f"{guild_id}_") and data.get('cash', 0) > 0:
+                        user_id = key.split('_', 1)[1]  # Extract user_id from "guild_id_user_id"
+                        cash = data.get('cash', 0)
+                        streak = data.get('daily_streak', 0)
+                        users_data.append((user_id, cash, streak))
                 
-                if total_users == 0:
-                    embed = discord.Embed(
-                        title="📈 Bảng xếp hạng Cash",
-                        description="Chưa có ai có tiền trong máy chủ này!\n\nDùng `?daily` để bắt đầu kiếm cash!",
-                        color=0x5865f2
-                    )
-                    await ctx.send(embed=embed)
-                    return
-                
-                # Calculate pagination
-                per_page = 10
-                total_pages = (total_users + per_page - 1) // per_page
-                
-                if page < 1 or page > total_pages:
-                    embed = discord.Embed(
-                        title="❌ Trang không hợp lệ",
-                        description=f"Vui lòng chọn trang từ 1 đến {total_pages}",
-                        color=0xff4444
-                    )
-                    await ctx.send(embed=embed)
-                    return
-                
-                offset = (page - 1) * per_page
-                
-                # Get leaderboard data for this page
-                cursor.execute(
-                    """SELECT user_id, cash, daily_streak 
-                       FROM user_cash 
-                       WHERE guild_id = %s AND cash > 0 
-                       ORDER BY cash DESC 
-                       LIMIT %s OFFSET %s""",
-                    (guild_id, per_page, offset)
-                )
-                results = cursor.fetchall()
-                
+                # Sort by cash (descending)
+                users_data.sort(key=lambda x: x[1], reverse=True)
+            
+            total_users = len(users_data)
+            
+            if total_users == 0:
                 embed = discord.Embed(
-                    title="🏆 Bảng xếp hạng Cash",
-                    description=f"💰 **Top người giàu nhất trong máy chủ**\n📄 Trang {page}/{total_pages}",
-                    color=0xffd700
+                    title="📈 Bảng xếp hạng Cash",
+                    description="Chưa có ai có tiền trong máy chủ này!\n\nDùng `?daily` để bắt đầu kiếm cash!",
+                    color=0x5865f2
                 )
-                
-                for i, (user_id, cash, streak) in enumerate(results):
-                    try:
-                        user = await bot.fetch_user(int(user_id))
-                        rank = offset + i + 1
-                        
-                        if rank == 1:
-                            rank_emoji = "🥇"
-                        elif rank == 2:
-                            rank_emoji = "🥈" 
-                        elif rank == 3:
-                            rank_emoji = "🥉"
-                        else:
-                            rank_emoji = f"{rank}."
-                        
-                        embed.add_field(
-                            name=f"{rank_emoji} {user.display_name}",
-                            value=f"💰 **{cash:,} cash**\n🔥 {streak} ngày streak",
-                            inline=True
-                        )
-                    except:
-                        continue
-                
-                if total_pages > 1:
-                    embed.set_footer(text=f"Dùng ?cashboard <số trang> để xem trang khác • Trang {page}/{total_pages}")
-                else:
-                    embed.set_footer(text="Dùng ?daily để kiếm cash!")
-                
                 await ctx.send(embed=embed)
+                return
+            
+            # Calculate pagination
+            per_page = 10
+            total_pages = (total_users + per_page - 1) // per_page
+            
+            if page < 1 or page > total_pages:
+                embed = discord.Embed(
+                    title="❌ Trang không hợp lệ",
+                    description=f"Vui lòng chọn trang từ 1 đến {total_pages}",
+                    color=0xff4444
+                )
+                await ctx.send(embed=embed)
+                return
+            
+            # Get data for this page
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_data = users_data[start_idx:end_idx]
+            
+            embed = discord.Embed(
+                title="🏆 Bảng xếp hạng Cash",
+                description=f"💰 **Top người giàu nhất trong máy chủ**\n📄 Trang {page}/{total_pages}",
+                color=0xffd700
+            )
+            
+            for i, (user_id, cash, streak) in enumerate(page_data):
+                try:
+                    user = await bot.fetch_user(int(user_id))
+                    rank = start_idx + i + 1
+                    
+                    if rank == 1:
+                        rank_emoji = "🥇"
+                    elif rank == 2:
+                        rank_emoji = "🥈" 
+                    elif rank == 3:
+                        rank_emoji = "🥉"
+                    else:
+                        rank_emoji = f"{rank}."
+                    
+                    embed.add_field(
+                        name=f"{rank_emoji} {user.display_name}",
+                        value=f"💰 **{cash:,} cash**\n🔥 {streak} ngày streak",
+                        inline=True
+                    )
+                except:
+                    # Skip if user can't be fetched
+                    continue
+            
+            if total_pages > 1:
+                embed.set_footer(text=f"Dùng ?cashboard <số trang> để xem trang khác • Trang {page}/{total_pages}")
+            else:
+                embed.set_footer(text="Dùng ?daily để kiếm cash!")
+            
+            # Add note about data source
+            if not connection:
+                embed.add_field(
+                    name="ℹ️ Thông tin",
+                    value="Dữ liệu từ bộ nhớ tạm (database không khả dụng)",
+                    inline=False
+                )
+            
+            await ctx.send(embed=embed)
                 
         except Exception as e:
             logger.error(f"Error getting cash leaderboard: {e}")

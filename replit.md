@@ -62,7 +62,7 @@ Preferred communication style: Simple, everyday language.
 - **Log Files**: Daily log rotation with structured logging format
 - **Config Directory**: Organized file structure for configurations and logs
 - **Backup System**: `user_cash_backup.json` stores player money data with automatic saves every 5 seconds
-- **Data Recovery**: Bot loads player data from backup file on startup, ensuring no data loss on restarts
+- **Data Recovery**: Bot loads player data from backup file on startup with smart merge functionality, preserving existing user data while adding new users, ensuring no data loss on restarts
 
 ### Python Libraries
 - **asyncio**: Handles concurrent Discord API operations and background tasks

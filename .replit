@@ -1,13 +1,2 @@
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python main.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[ports]]
-localPort = 8080
-externalPort = 80
-run = "python3 main.py"
+[agent]
+expertMode = true

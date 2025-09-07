@@ -161,6 +161,23 @@ class AntiSpamBot(commands.Bot):
                 logger.debug("No user data to backup, skipping save")
                 return
             
+            # Additional safety check: don't save if all users have default/reset values
+            # This catches cases where memory was corrupted but not empty
+            suspicious_data = True
+            for key, data in self.user_cash_memory.items():
+                cash = data.get('cash', 1000)
+                last_daily = data.get('last_daily')
+                streak = data.get('daily_streak', 0)
+                
+                # If any user has non-default values, data looks legitimate
+                if cash != 1000 or last_daily is not None or streak > 0:
+                    suspicious_data = False
+                    break
+            
+            if suspicious_data:
+                logger.warning("All users have default values - skipping backup to prevent data loss")
+                return
+            
             # Load existing backup data first to merge with current data
             existing_data = {}
             if os.path.exists(self.backup_file_path):
@@ -172,6 +189,7 @@ class AntiSpamBot(commands.Bot):
                     logger.warning(f"Could not load existing backup for merging: {e}")
             
             # Merge current memory with existing backup data
+            # Existing data takes priority unless current data is clearly more recent/valuable
             merged_data = existing_data.copy()
             
             # Convert current memory data to serializable format and merge
@@ -182,8 +200,22 @@ class AntiSpamBot(commands.Bot):
                 if 'last_daily' in processed_data and processed_data['last_daily']:
                     if hasattr(processed_data['last_daily'], 'isoformat'):
                         processed_data['last_daily'] = processed_data['last_daily'].isoformat()
-                        
-                merged_data[key] = processed_data
+                
+                # Only overwrite existing data if current data seems more valuable
+                if key in existing_data:
+                    existing_cash = existing_data[key].get('cash', 1000)
+                    current_cash = processed_data.get('cash', 1000)
+                    
+                    # Only update if current data is clearly more recent or valuable
+                    # (higher cash, or more recent activity)
+                    if (current_cash > existing_cash or 
+                        processed_data.get('last_daily') and not existing_data[key].get('last_daily')):
+                        merged_data[key] = processed_data
+                        logger.debug(f"Updated user {key}: cash {existing_cash} -> {current_cash}")
+                else:
+                    # New user, add them
+                    merged_data[key] = processed_data
+                    logger.debug(f"Added new user {key} with {processed_data.get('cash', 1000)} cash")
             
             backup_data = {
                 'user_cash_memory': merged_data,
@@ -197,13 +229,16 @@ class AntiSpamBot(commands.Bot):
             
             # Atomic rename to prevent corruption
             os.rename(temp_file, self.backup_file_path)
-            logger.debug(f"Successfully saved backup data for {len(merged_data)} users (merged)")
+            logger.debug(f"Successfully saved backup data for {len(merged_data)} users (smart merge)")
             
         except Exception as e:
             logger.error(f"Error saving backup data: {e}")
     
     async def _backup_data_loop(self):
         """Background task that saves data every 5 seconds"""
+        # Wait a bit on first run to ensure system is ready
+        await asyncio.sleep(10)  # Initial delay to let system stabilize
+        
         while True:
             try:
                 await asyncio.sleep(5)  # Save every 5 seconds
@@ -626,8 +661,10 @@ class AntiSpamBot(commands.Bot):
         logger.info(f'{self.user} has connected to Discord!')
         logger.info(f'Bot is in {len(self.guilds)} guilds')
         
-        # Start the backup task if not already running
+        # Start the backup task if not already running, but only if we have data to protect
         if self.backup_task is None or self.backup_task.done():
+            # Add a delay before starting the backup loop to ensure system is fully ready
+            await asyncio.sleep(2)  # Wait 2 seconds before starting backup loop
             self.backup_task = asyncio.create_task(self._backup_data_loop())
             logger.info("Started backup data loop - saving user data every 5 seconds")
         

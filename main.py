@@ -508,6 +508,10 @@ class AntiSpamBot(commands.Bot):
         if game_data['status'] != 'active':
             return
         
+        # Cancel the end task if it exists (for instant stops)
+        if instant_stop and 'end_task' in game_data and game_data['end_task']:
+            game_data['end_task'].cancel()
+        
         game_data['status'] = 'ended'
         
         # Get the channel
@@ -2646,7 +2650,8 @@ async def main():
             'end_time': end_time,
             'bets': [],
             'status': 'active',
-            'result': None
+            'result': None,
+            'end_task': None
         }
         
         # Store in database
@@ -2693,7 +2698,8 @@ async def main():
         await ctx.send(embed=embed)
         
         # Schedule game end
-        asyncio.create_task(bot._end_overunder_game(guild_id, game_id))
+        game_task = asyncio.create_task(bot._end_overunder_game(guild_id, game_id))
+        bot.overunder_games[guild_id][game_id]['end_task'] = game_task
     
     @bot.command(name='cuoc')
     async def place_bet(ctx, side=None, amount=None):

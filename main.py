@@ -2943,6 +2943,94 @@ async def main():
         # End game immediately
         await bot._end_overunder_game(guild_id, active_game_id, instant_stop=True)
     
+    @bot.command(name='txshow')
+    async def show_overunder_result(ctx):
+        """Show game result instantly but continue the game"""
+        guild_id = str(ctx.guild.id)
+        channel_id = str(ctx.channel.id)
+        
+        # Find active game in this channel
+        active_game_id = None
+        active_game_data = None
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
+                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
+                    active_game_id = game_id
+                    active_game_data = game_data
+                    break
+        
+        if not active_game_id:
+            embed = discord.Embed(
+                title="❌ Không có game Tài Xỉu",
+                description="Hiện tại không có game Tài Xỉu nào đang chạy trong kênh này.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Generate random result for preview (50/50 chance)
+        preview_result = random.choice(['tai', 'xiu'])
+        
+        # Show result preview
+        embed = discord.Embed(
+            title="🔮 Kết quả trước khi kết thúc!",
+            description=f"**Kết quả hiện tại sẽ là: {preview_result.upper()}** 🎲\n\n⚠️ *Đây chỉ là xem trước! Game vẫn tiếp tục và kết quả có thể thay đổi khi game kết thúc.*",
+            color=0xffa500
+        )
+        
+        # Show current bets
+        if active_game_data['bets']:
+            tai_bets = [bet for bet in active_game_data['bets'] if bet['side'] == 'tai']
+            xiu_bets = [bet for bet in active_game_data['bets'] if bet['side'] == 'xiu']
+            
+            if tai_bets:
+                tai_text = "\n".join([f"🔸 **{bet['username']}** - {bet['amount']:,} cash" for bet in tai_bets])
+                embed.add_field(
+                    name=f"🟢 Cược TÀI ({len(tai_bets)} người)",
+                    value=tai_text,
+                    inline=True
+                )
+            
+            if xiu_bets:
+                xiu_text = "\n".join([f"🔸 **{bet['username']}** - {bet['amount']:,} cash" for bet in xiu_bets])
+                embed.add_field(
+                    name=f"🔴 Cược XỈU ({len(xiu_bets)} người)",
+                    value=xiu_text,
+                    inline=True
+                )
+            
+            # Show who would win/lose with current result
+            winners = tai_bets if preview_result == 'tai' else xiu_bets
+            losers = xiu_bets if preview_result == 'tai' else tai_bets
+            
+            if winners:
+                winners_text = f"{len(winners)} người thắng"
+                if preview_result == 'tai':
+                    winners_text += " (cược TÀI)"
+                else:
+                    winners_text += " (cược XỈU)"
+            else:
+                winners_text = "Không có ai thắng"
+                
+            embed.add_field(
+                name="🏆 Nếu kết quả này",
+                value=winners_text,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🤷‍♂️ Chưa có cược",
+                value="Không có ai đặt cược trong game này.",
+                inline=False
+            )
+        
+        # Calculate remaining time
+        import datetime
+        remaining = active_game_data['end_time'] - datetime.datetime.utcnow()
+        remaining_seconds = max(0, int(remaining.total_seconds()))
+        
+        embed.set_footer(text=f"Game ID: {active_game_id} • Còn lại: {remaining_seconds} giây • Kết quả có thể thay đổi!")
+        await ctx.send(embed=embed)
 
     @bot.command(name='reset_questions')
     @commands.has_permissions(administrator=True)

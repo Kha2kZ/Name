@@ -1,25 +1,15 @@
 {
   "user_cash_memory": {
     "1234567890_9876543210": {
-      "cash": 5000,
+      "cash": 25000,
       "last_daily": "2025-09-06",
-      "daily_streak": 3
+      "daily_streak": 5
     },
     "1111111111_2222222222": {
-      "cash": 12500,
-      "last_daily": "2025-09-06",
-      "daily_streak": 1
-    },
-    "9999999999_8888888888": {
-      "cash": 2500,
-      "last_daily": null,
-      "daily_streak": 0
-    },
-    "999999999_111111111": {
-      "cash": 1500,
+      "cash": 8500,
       "last_daily": "2025-09-07",
-      "daily_streak": 1
+      "daily_streak": 2
     }
   },
-  "last_backup": "2025-09-07T06:01:28.163913"
+  "last_backup": "2025-09-07T06:15:00.000000"
 }

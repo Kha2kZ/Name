@@ -161,8 +161,20 @@ class AntiSpamBot(commands.Bot):
                 logger.debug("No user data to backup, skipping save")
                 return
             
-            # Convert date objects to strings for JSON serialization
-            serializable_data = {}
+            # Load existing backup data first to merge with current data
+            existing_data = {}
+            if os.path.exists(self.backup_file_path):
+                try:
+                    with open(self.backup_file_path, 'r', encoding='utf-8') as f:
+                        existing_backup = json.load(f)
+                        existing_data = existing_backup.get('user_cash_memory', {})
+                except Exception as e:
+                    logger.warning(f"Could not load existing backup for merging: {e}")
+            
+            # Merge current memory with existing backup data
+            merged_data = existing_data.copy()
+            
+            # Convert current memory data to serializable format and merge
             for key, data in self.user_cash_memory.items():
                 processed_data = data.copy()
                 
@@ -171,10 +183,10 @@ class AntiSpamBot(commands.Bot):
                     if hasattr(processed_data['last_daily'], 'isoformat'):
                         processed_data['last_daily'] = processed_data['last_daily'].isoformat()
                         
-                serializable_data[key] = processed_data
+                merged_data[key] = processed_data
             
             backup_data = {
-                'user_cash_memory': serializable_data,
+                'user_cash_memory': merged_data,
                 'last_backup': datetime.utcnow().isoformat()
             }
             
@@ -185,7 +197,7 @@ class AntiSpamBot(commands.Bot):
             
             # Atomic rename to prevent corruption
             os.rename(temp_file, self.backup_file_path)
-            logger.debug(f"Successfully saved backup data for {len(self.user_cash_memory)} users")
+            logger.debug(f"Successfully saved backup data for {len(merged_data)} users (merged)")
             
         except Exception as e:
             logger.error(f"Error saving backup data: {e}")

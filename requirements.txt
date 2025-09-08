@@ -2,4 +2,3 @@ discord.py
 openai
 psycopg2-binary
 Flask
-manifest-ml

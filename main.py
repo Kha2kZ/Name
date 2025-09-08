@@ -27,23 +27,23 @@ def _parse_duration(duration_str):
     """Parse duration string like '30s', '5m', '2h', '1d' into seconds"""
     if not duration_str:
         return None
-        
+
     # Remove spaces and convert to lowercase
     duration_str = duration_str.lower().strip()
-    
+
     # Check if it's just a number (assume seconds)
     if duration_str.isdigit():
         return int(duration_str)
-    
+
     # Parse format like "30s", "5m", "2h", "1d"
     import re
     match = re.match(r'^(\d+)([smhd])$', duration_str)
     if not match:
         return None
-    
+
     value, unit = match.groups()
     value = int(value)
-    
+
     if unit == 's':
         return value
     elif unit == 'm':
@@ -52,7 +52,7 @@ def _parse_duration(duration_str):
         return value * 3600
     elif unit == 'd':
         return value * 86400
-    
+
     return None
 
 def _format_duration(seconds):
@@ -76,52 +76,52 @@ class AntiSpamBot(commands.Bot):
         intents.members = True
         intents.guilds = True
         intents.guild_messages = True
-        
+
         super().__init__(
             command_prefix='?',
             intents=intents,
             help_command=None
         )
-        
+
         # Initialize components
         self.config_manager = ConfigManager()
         self.bot_detector = BotDetector(self.config_manager)
         self.spam_detector = SpamDetector(self.config_manager)
         self.moderation = ModerationTools(self)
         self.monitor = BotMonitor(self)
-        
+
         # Initialize OpenAI for translation
         # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
         # do not change this unless explicitly requested by the user
         self.openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-        
+
         # Database URL for creating connections as needed
         self.database_url = os.environ.get("DATABASE_URL")
         self._create_initial_tables()
-        
+
         # Track member joins for raid detection
         self.recent_joins = {}
-        
+
         # Track pending verifications
         self.pending_verifications = {}
-        
+
         # Game system tracking
         self.active_games = {}
         self.leaderboard = {}
-        
+
         # Over/Under game tracking
         self.overunder_games = {}
-        
+
         # In-memory cash storage when database isn't available
         self.user_cash_memory = {}
-        
+
         # File-based backup system
         self.backup_file_path = "user_cash_backup.json"
         self._load_backup_data()
-        
+
         # Start background backup task
         self.backup_task = None
-    
+
     def _load_backup_data(self):
         """Load user cash data from backup file on startup"""
         try:
@@ -129,12 +129,12 @@ class AntiSpamBot(commands.Bot):
                 with open(self.backup_file_path, 'r', encoding='utf-8') as f:
                     backup_data = json.load(f)
                     raw_user_data = backup_data.get('user_cash_memory', {})
-                    
+
                     # Convert date strings back to date objects
                     self.user_cash_memory = {}
                     for key, data in raw_user_data.items():
                         processed_data = data.copy()
-                        
+
                         # Convert last_daily string back to date object
                         if 'last_daily' in processed_data and processed_data['last_daily']:
                             try:
@@ -142,9 +142,9 @@ class AntiSpamBot(commands.Bot):
                                     processed_data['last_daily'] = datetime.strptime(processed_data['last_daily'], '%Y-%m-%d').date()
                             except (ValueError, TypeError):
                                 processed_data['last_daily'] = None
-                                
+
                         self.user_cash_memory[key] = processed_data
-                    
+
                     logger.info(f"Loaded backup data for {len(self.user_cash_memory)} users from {self.backup_file_path}")
             else:
                 logger.info("No backup file found, starting with empty memory")
@@ -152,7 +152,7 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error loading backup data: {e}")
             self.user_cash_memory = {}
-    
+
     def _save_backup_data(self):
         """Save current user cash data to backup file"""
         try:
@@ -160,7 +160,7 @@ class AntiSpamBot(commands.Bot):
             if not self.user_cash_memory:
                 logger.debug("No user data to backup, skipping save")
                 return
-            
+
             # Additional safety check: don't save if all users have default/reset values
             # This catches cases where memory was corrupted but not empty
             suspicious_data = True
@@ -168,16 +168,16 @@ class AntiSpamBot(commands.Bot):
                 cash = data.get('cash', 1000)
                 last_daily = data.get('last_daily')
                 streak = data.get('daily_streak', 0)
-                
+
                 # If any user has non-default values, data looks legitimate
                 if cash != 1000 or last_daily is not None or streak > 0:
                     suspicious_data = False
                     break
-            
+
             if suspicious_data:
                 logger.warning("All users have default values - skipping backup to prevent data loss")
                 return
-            
+
             # Load existing backup data first to merge with current data
             existing_data = {}
             if os.path.exists(self.backup_file_path):
@@ -187,25 +187,25 @@ class AntiSpamBot(commands.Bot):
                         existing_data = existing_backup.get('user_cash_memory', {})
                 except Exception as e:
                     logger.warning(f"Could not load existing backup for merging: {e}")
-            
+
             # Merge current memory with existing backup data
             # Existing data takes priority unless current data is clearly more recent/valuable
             merged_data = existing_data.copy()
-            
+
             # Convert current memory data to serializable format and merge
             for key, data in self.user_cash_memory.items():
                 processed_data = data.copy()
-                
+
                 # Convert date objects to ISO string format
                 if 'last_daily' in processed_data and processed_data['last_daily']:
                     if hasattr(processed_data['last_daily'], 'isoformat'):
                         processed_data['last_daily'] = processed_data['last_daily'].isoformat()
-                
+
                 # Only overwrite existing data if current data seems more valuable
                 if key in existing_data:
                     existing_cash = existing_data[key].get('cash', 1000)
                     current_cash = processed_data.get('cash', 1000)
-                    
+
                     # Only update if current data is clearly more recent or valuable
                     # (higher cash, or more recent activity)
                     if (current_cash > existing_cash or 
@@ -216,29 +216,29 @@ class AntiSpamBot(commands.Bot):
                     # New user, add them
                     merged_data[key] = processed_data
                     logger.debug(f"Added new user {key} with {processed_data.get('cash', 1000)} cash")
-            
+
             backup_data = {
                 'user_cash_memory': merged_data,
                 'last_backup': datetime.utcnow().isoformat()
             }
-            
+
             # Create temporary file first, then rename for atomic write
             temp_file = f"{self.backup_file_path}.tmp"
             with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(backup_data, f, indent=2, ensure_ascii=False)
-            
+
             # Atomic rename to prevent corruption
             os.rename(temp_file, self.backup_file_path)
             logger.debug(f"Successfully saved backup data for {len(merged_data)} users (smart merge)")
-            
+
         except Exception as e:
             logger.error(f"Error saving backup data: {e}")
-    
+
     async def _backup_data_loop(self):
         """Background task that saves data every 5 seconds"""
         # Wait a bit on first run to ensure system is ready
         await asyncio.sleep(10)  # Initial delay to let system stabilize
-        
+
         while True:
             try:
                 await asyncio.sleep(5)  # Save every 5 seconds
@@ -247,7 +247,7 @@ class AntiSpamBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Error in backup loop: {e}")
                 await asyncio.sleep(30)  # Wait longer if there's an error
-        
+
     def _get_db_connection(self):
         """Get a fresh database connection for operations"""
         if not self.database_url:
@@ -255,19 +255,19 @@ class AntiSpamBot(commands.Bot):
         try:
             return psycopg2.connect(self.database_url)
         except Exception as e:
-            logger.error(f"Failed to create database connection: {e}")
+            logger.error(f"Failed to create importase connection: {e}")
             return None
-    
+
     def _create_initial_tables(self):
         """Create necessary database tables if they don't exist"""
         if not self.database_url:
             logger.warning("DATABASE_URL not set, database features disabled")
             return
-            
+
         connection = self._get_db_connection()
         if not connection:
             return
-        
+
         try:
             with connection.cursor() as cursor:
                 # Create user_cash table
@@ -281,7 +281,7 @@ class AntiSpamBot(commands.Bot):
                         PRIMARY KEY (guild_id, user_id)
                     )
                 """)
-                
+
                 # Create shown_questions table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS shown_questions (
@@ -290,7 +290,7 @@ class AntiSpamBot(commands.Bot):
                         PRIMARY KEY (guild_id, question_text)
                     )
                 """)
-                
+
                 # Create overunder_games table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS overunder_games (
@@ -302,21 +302,21 @@ class AntiSpamBot(commands.Bot):
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                
+
                 connection.commit()
                 logger.info("Database tables created/verified successfully")
-                
+
         except Exception as e:
             logger.error(f"Error creating database tables: {e}")
         finally:
             connection.close()
-    
+
     def _get_shown_questions(self, guild_id):
         """Get all questions that have been shown to this guild"""
         connection = self._get_db_connection()
         if not connection:
             return set()
-        
+
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -330,13 +330,13 @@ class AntiSpamBot(commands.Bot):
             return set()
         finally:
             connection.close()
-    
+
     def _mark_question_shown(self, guild_id, question_text):
         """Mark a question as shown for this guild"""
         connection = self._get_db_connection()
         if not connection:
             return
-        
+
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -348,16 +348,16 @@ class AntiSpamBot(commands.Bot):
             logger.error(f"Error marking question as shown: {e}")
         finally:
             connection.close()
-    
+
     def _batch_mark_questions_shown(self, guild_id, questions):
         """Mark multiple questions as shown for this guild (batch operation)"""
         if not questions:
             return
-            
+
         connection = self._get_db_connection()
         if not connection:
             return
-        
+
         try:
             with connection.cursor() as cursor:
                 # Use executemany for batch insert
@@ -381,7 +381,7 @@ class AntiSpamBot(commands.Bot):
         connection = self._get_db_connection()
         if not connection:
             return
-        
+
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -394,7 +394,7 @@ class AntiSpamBot(commands.Bot):
             logger.error(f"Error resetting question history: {e}")
         finally:
             connection.close()
-        
+
     async def translate_to_vietnamese(self, text):
         """Translate English text to Vietnamese"""
         try:
@@ -418,7 +418,7 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return text  # Return original text if translation fails
-    
+
     async def translate_to_english(self, vietnamese_text):
         """Translate Vietnamese text to English for answer checking"""
         try:
@@ -442,7 +442,7 @@ class AntiSpamBot(commands.Bot):
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return vietnamese_text.lower()  # Return original text if translation fails
-    
+
     # === CASH SYSTEM HELPER METHODS ===
     def _get_user_cash(self, guild_id, user_id):
         """Get user's cash amount and daily streak info"""
@@ -456,7 +456,7 @@ class AntiSpamBot(commands.Bot):
             else:
                 # Give new users some starting cash
                 return 1000, None, 0
-        
+
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -479,7 +479,7 @@ class AntiSpamBot(commands.Bot):
             return 0, None, 0
         finally:
             connection.close()
-    
+
     def _update_user_cash(self, guild_id, user_id, cash_amount, last_daily=None, daily_streak=None):
         """Update user's cash amount and daily streak"""
         connection = self._get_db_connection()
@@ -488,7 +488,7 @@ class AntiSpamBot(commands.Bot):
             key = f"{guild_id}_{user_id}"
             if key not in self.user_cash_memory:
                 self.user_cash_memory[key] = {'cash': 1000, 'last_daily': None, 'daily_streak': 0}
-            
+
             if last_daily is not None and daily_streak is not None:
                 # Set absolute values (for daily rewards)
                 self.user_cash_memory[key].update({
@@ -499,11 +499,11 @@ class AntiSpamBot(commands.Bot):
             else:
                 # Add to existing cash (for bets/winnings)
                 self.user_cash_memory[key]['cash'] += cash_amount
-            
+
             # Save backup immediately when cash is updated
             self._save_backup_data()
             return True
-        
+
         try:
             with connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
@@ -529,7 +529,7 @@ class AntiSpamBot(commands.Bot):
             return False
         finally:
             connection.close()
-    
+
     def _calculate_daily_reward(self, streak):
         """Calculate daily reward based on streak"""
         base_reward = 1000
@@ -542,34 +542,34 @@ class AntiSpamBot(commands.Bot):
         else:
             # Continue increasing by 400 per day after day 3
             return 1500 + (400 * (streak - 2))
-    
+
     async def _end_overunder_game(self, guild_id, game_id, instant_stop=False):
         """End the Over/Under game and distribute winnings"""
         if not instant_stop:
             await asyncio.sleep(150)  # Wait for game duration
-        
+
         if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
             return
-        
+
         game_data = self.overunder_games[guild_id][game_id]
         if game_data['status'] != 'active':
             return
-        
+
         # Cancel the end task if it exists (for instant stops)
         if instant_stop and 'end_task' in game_data and game_data['end_task']:
             game_data['end_task'].cancel()
-        
+
         game_data['status'] = 'ended'
-        
+
         # Get the channel
         channel = self.get_channel(int(game_data['channel_id']))
         if not channel or not hasattr(channel, 'send'):
             return
-        
+
         # Generate random result (50/50 chance)
         result = random.choice(['tai', 'xiu'])
         game_data['result'] = result
-        
+
         # Update database
         try:
             connection = self._get_db_connection()
@@ -583,11 +583,11 @@ class AntiSpamBot(commands.Bot):
                 connection.close()
         except Exception as e:
             logger.error(f"Error updating game result: {e}")
-        
+
         # Process winnings
         winners = []
         losers = []
-        
+
         for bet in game_data['bets']:
             if bet['side'] == result:
                 # Winner - give back double the bet
@@ -604,14 +604,14 @@ class AntiSpamBot(commands.Bot):
                     'username': bet['username'],
                     'amount': bet['amount']
                 })
-        
+
         # Create result embed
         embed = discord.Embed(
             title="🎲 Kết Quả Game Over/Under!",
             description=f"**{result.upper()} THẮNG!** 🎉",
             color=0x00ff88 if winners else 0xff4444
         )
-        
+
         if winners:
             winners_text = "\n".join([f"🏆 **{w['username']}** - Cược {w['amount']:,} → Nhận **{w['winnings']:,} cash**" for w in winners])
             embed.add_field(
@@ -619,7 +619,7 @@ class AntiSpamBot(commands.Bot):
                 value=winners_text,
                 inline=False
             )
-        
+
         if losers:
             losers_text = "\n".join([f"💸 **{l['username']}** - Mất {l['amount']:,} cash" for l in losers])
             embed.add_field(
@@ -627,47 +627,47 @@ class AntiSpamBot(commands.Bot):
                 value=losers_text,
                 inline=False
             )
-        
+
         if not game_data['bets']:
             embed.add_field(
                 name="🤷‍♂️ Không có ai tham gia",
                 value="Không có cược nào được đặt trong game này.",
                 inline=False
             )
-        
+
         embed.add_field(
             name="🎮 Game mới",
             value="Dùng `?tx` để bắt đầu game Over/Under mới!",
             inline=False
         )
-        
+
         embed.set_footer(text=f"Game ID: {game_id} • Cảm ơn bạn đã tham gia! 🎉")
-        
+
         await channel.send(embed=embed)
-        
+
         # Clean up game data
         del self.overunder_games[guild_id][game_id]
         if not self.overunder_games[guild_id]:  # Remove guild if no games left
             del self.overunder_games[guild_id]
-        
+
     async def setup_hook(self):
         """Called when the bot is starting up"""
         logger.info("Bot is starting up...")
         # Start monitoring
         self.monitor.start_monitoring()
-        
+
     async def on_ready(self):
         """Called when the bot is ready"""
         logger.info(f'{self.user} has connected to Discord!')
         logger.info(f'Bot is in {len(self.guilds)} guilds')
-        
+
         # Start the backup task if not already running, but only if we have data to protect
         if self.backup_task is None or self.backup_task.done():
             # Add a delay before starting the backup loop to ensure system is fully ready
             await asyncio.sleep(2)  # Wait 2 seconds before starting backup loop
             self.backup_task = asyncio.create_task(self._backup_data_loop())
             logger.info("Started backup data loop - saving user data every 5 seconds")
-        
+
         # Set bot status
         await self.change_presence(
             status=discord.Status.online,
@@ -676,95 +676,95 @@ class AntiSpamBot(commands.Bot):
                 name="with your feelings 💔"
             )
         )
-        
+
     async def on_guild_join(self, guild):
         """Handle bot joining a new guild"""
         logger.info(f"Joined new guild: {guild.name} ({guild.id})")
         # Initialize configuration for new guild
         self.config_manager.initialize_guild_config(str(guild.id))
-        
+
     async def on_member_join(self, member):
         """Handle new member joins"""
         guild_id = str(member.guild.id)
         config = self.config_manager.get_guild_config(guild_id)
-        
+
         if not config['enabled']:
             return
-            
+
         logger.info(f"New member joined {member.guild.name}: {member} ({member.id})")
-        
+
         # Check for raid protection
         await self._check_raid_protection(member)
-        
+
         # Record member join event
         self.monitor.record_member_event('join', guild_id, str(member.id))
-        
+
         # Run bot detection
         is_suspicious = await self.bot_detector.analyze_member(member)
-        
+
         if is_suspicious:
             await self._handle_suspicious_member(member)
         elif config['verification']['enabled']:
             await self._start_verification(member)
-            
+
     async def on_message(self, message):
         """Handle message events for spam detection and verification"""
         if message.author.bot:
             await self.process_commands(message)
             return
-        
+
         # Handle DM verification responses
         if isinstance(message.channel, discord.DMChannel):
             await self._handle_verification_response(message)
             return
-            
+
         guild_id = str(message.guild.id) if message.guild else None
         if not guild_id:
             await self.process_commands(message)
             return
-            
+
         config = self.config_manager.get_guild_config(guild_id)
         if not config['enabled']:
             await self.process_commands(message)
             return
-            
+
         # Check for trivia game answers
         await self._check_trivia_answer(message)
-        
+
         # Check for spam
         is_spam = await self.spam_detector.check_message(message)
-        
+
         if is_spam:
             await self._handle_spam_message(message)
             return
-            
+
         await self.process_commands(message)
-        
+
     async def on_member_remove(self, member):
         """Handle member leaving the server"""
         guild_id = str(member.guild.id)
         self.monitor.record_member_event('leave', guild_id, str(member.id))
         logger.info(f"Member left {member.guild.name}: {member} ({member.id})")
-    
+
     async def _check_trivia_answer(self, message):
         """Check if message is a QNA game answer"""
         guild_id = str(message.guild.id)
-        
+
         if guild_id not in self.active_games:
             return
-        
+
         game = self.active_games[guild_id]
         current_question = game['current_question']
         user_id = str(message.author.id)
-        
+
         # Get user's answer 
         user_answer = message.content.strip().lower()
         correct_answer = current_question['answer'].lower()
         vietnamese_answer = current_question.get('vietnamese_answer', '').lower()
-        
+
         # Fast local matching first (no API calls needed)
         is_correct = False
-        
+
         # Direct Vietnamese and English answer matching
         if (correct_answer == user_answer or 
             correct_answer in user_answer or 
@@ -773,7 +773,7 @@ class AntiSpamBot(commands.Bot):
             vietnamese_answer in user_answer or
             user_answer in vietnamese_answer):
             is_correct = True
-        
+
         # Common Vietnamese answer variants (instant matching)
         vietnamese_variants = {
             'fansipan': ['phan xi păng', 'phan si pan', 'fanxipan', 'fan si pan'],
@@ -794,7 +794,7 @@ class AntiSpamBot(commands.Bot):
             '58': ['58', 'năm mười tám', 'nam muoi tam'],
             '17 triệu': ['17 triệu', '17000000', 'mười bảy triệu', 'muoi bay trieu']
         }
-        
+
         # Check Vietnamese variants instantly
         for eng_answer, viet_variants in vietnamese_variants.items():
             if eng_answer == correct_answer:
@@ -802,39 +802,39 @@ class AntiSpamBot(commands.Bot):
                     if variant in user_answer or user_answer in variant:
                         is_correct = True
                         break
-        
+
         # Additional number and common word matching for speed
         if not is_correct:
             # Numbers matching (Vietnamese style)
             if correct_answer.isdigit():
                 if correct_answer in user_answer or user_answer == correct_answer:
                     is_correct = True
-            
+
             # Remove diacritics for fuzzy matching
             import unicodedata
             def remove_diacritics(text):
                 return unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii')
-            
+
             user_no_diacritics = remove_diacritics(user_answer)
             answer_no_diacritics = remove_diacritics(vietnamese_answer)
-            
+
             if (answer_no_diacritics and 
                 (answer_no_diacritics in user_no_diacritics or 
                  user_no_diacritics in answer_no_diacritics)):
                 is_correct = True
-        
+
         # Skip slow translation API entirely to maintain speed
         # The local matching above should handle 99% of cases instantly
-        
+
         if is_correct:
             # Mark question as answered
             game['question_answered'] = True
-            
+
             # Award points
             if user_id not in game['players']:
                 game['players'][user_id] = 0
             game['players'][user_id] += 10
-            
+
             embed = discord.Embed(
                 title="🎯 Đáp án chính xác!",
                 description=f"**{message.author.display_name}** đã trả lời đúng!\n\n+10 điểm được trao!",
@@ -850,14 +850,14 @@ class AntiSpamBot(commands.Bot):
                 value=f"**{game['players'][user_id]} điểm**",
                 inline=True
             )
-            
+
             await message.channel.send(embed=embed)
-        
+
     async def _end_game_from_message(self, message, guild_id):
         """End game from message context"""
         game = self.active_games[guild_id]
         players = game['players']
-        
+
         if not players:
             embed = discord.Embed(
                 title="🎮 Trò chơi kết thúc",
@@ -869,21 +869,21 @@ class AntiSpamBot(commands.Bot):
             # Update leaderboard
             if guild_id not in self.leaderboard:
                 self.leaderboard[guild_id] = {}
-            
+
             for user_id, score in players.items():
                 if user_id not in self.leaderboard[guild_id]:
                     self.leaderboard[guild_id][user_id] = 0
                 self.leaderboard[guild_id][user_id] += score
-            
+
             # Show final results
             sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
-            
+
             embed = discord.Embed(
                 title="🎮 Trò chơi hoàn thành!",
                 description="🏁 **Kết quả cuối cùng**",
                 color=0x00ff88
             )
-            
+
             for i, (user_id, score) in enumerate(sorted_players[:5]):
                 try:
                     user = await self.fetch_user(int(user_id))
@@ -895,28 +895,28 @@ class AntiSpamBot(commands.Bot):
                     )
                 except:
                     continue
-            
+
             embed.set_footer(text="Trò chơi tuyệt vời! Dùng ?leaderboard để xem điểm tổng")
             await message.channel.send(embed=embed)
-        
+
         # Clean up game data
         del self.active_games[guild_id]
-    
+
     async def _qna_question_loop(self, guild_id):
         """Continuously show new questions every 5 seconds with 30s timeout"""
         import random
-        
+
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
                 game = self.active_games[guild_id]
-                
+
                 # Wait for either answer or timeout
                 start_wait = datetime.utcnow()
                 while (datetime.utcnow() - start_wait).total_seconds() < 30:
                     if game['question_answered'] or not game['running']:
                         break
                     await asyncio.sleep(1)  # Check every second
-                
+
                 # If timeout occurred (30 seconds passed without answer)
                 if not game['question_answered'] and game['running']:
                     embed = discord.Embed(
@@ -931,17 +931,17 @@ class AntiSpamBot(commands.Bot):
                     )
                     embed.set_footer(text="Chúc may mắn lần sau!")
                     await game['channel'].send(embed=embed)
-                
+
                 # Brief pause before next question
                 if game['running']:
                     await asyncio.sleep(3)
-                
+
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
-                    
+
                 # Select next question (prioritize new questions, avoid repeats)
                 current_question = None
-                
+
                 # First, try new generated questions
                 if game['new_questions']:
                     current_question = game['new_questions'].pop(0)  # Take first new question
@@ -949,11 +949,11 @@ class AntiSpamBot(commands.Bot):
                 else:
                     # Use original questions, but avoid already shown ones
                     available_questions = [q for q in game['questions'] if q['question'] not in game['shown_questions']]
-                    
+
                     if not available_questions:
                         # No available questions - wait for new generation without sending duplicate messages
                         logger.info("No available questions, waiting for new generation")
-                        
+
                         # Only show waiting message once per session
                         if not game.get('waiting_message_sent', False):
                             embed = discord.Embed(
@@ -967,30 +967,30 @@ class AntiSpamBot(commands.Bot):
                                 inline=False
                             )
                             embed.set_footer(text="Câu hỏi mới sẽ xuất hiện sớm!")
-                            
+
                             await game['channel'].send(embed=embed)
                             game['waiting_message_sent'] = True
-                        
+
                         await asyncio.sleep(2)  # Shorter wait, no continue to avoid loop restart
                         continue
-                    
+
                     # Select from available_questions that passed the filter
                     current_question = random.choice(available_questions)
                     logger.info(f"Using available original question: {current_question['question']}")
-                
+
                 # Track that this question was shown in memory and database (skip for placeholders)
                 if not current_question.get('is_placeholder', False):
                     game['shown_questions'].add(current_question['question'])
                     self._mark_question_shown(guild_id, current_question['question'])
                     if current_question in game['questions']:
                         game['questions'].remove(current_question)
-                
+
                 game['current_question'] = current_question
                 game['question_number'] += 1
                 game['last_question_time'] = datetime.utcnow()
                 game['question_answered'] = False
                 game['question_start_time'] = datetime.utcnow()
-                
+
                 embed = discord.Embed(
                     title="🤔 Câu hỏi tiếp theo",
                     description=f"**Câu hỏi #{game['question_number']}**",
@@ -1002,17 +1002,17 @@ class AntiSpamBot(commands.Bot):
                     inline=False
                 )
                 embed.set_footer(text="Trả lời trực tiếp trong chat • Dùng ?stop để kết thúc • ?skip nếu bí")
-                
+
                 await game['channel'].send(embed=embed)
-                
+
             except Exception as e:
                 logger.error(f"Error in QNA question loop: {e}")
                 break
-    
+
     async def _qna_generation_loop(self, guild_id):
         """Generate new Vietnam-focused questions every 2 seconds"""
         import random
-        
+
         # Vietnam-focused question database (Vietnamese questions with English answers for matching)
         vietnam_questions = {
             "geography": [
@@ -1111,119 +1111,119 @@ class AntiSpamBot(commands.Bot):
                 ("Tác phẩm Việt Nam kể về cô con gái quan?", "kieu", "Truyện Kiều")
             ]
         }
-        
+
         while guild_id in self.active_games and self.active_games[guild_id]['running']:
             try:
                 await asyncio.sleep(2)  # Much faster generation - every 2 seconds
-                
+
                 if guild_id not in self.active_games or not self.active_games[guild_id]['running']:
                     break
-                
+
                 game = self.active_games[guild_id]
-                
+
                 # Generate multiple questions at once for better performance
                 questions_to_generate = min(3, 10)  # Generate up to 3 at once
-                
+
                 # Efficiently filter available questions (avoid nested loops)
                 available_new_questions = []
                 for cat_name, cat_questions in vietnam_questions.items():
                     for q_data in cat_questions:
                         if q_data[0] not in game['shown_questions']:
                             available_new_questions.append((cat_name, q_data))
-                
+
                 # If we have new questions available and queue isn't full, generate several
                 if available_new_questions and len(game['new_questions']) < 5:  # Keep queue small
                     questions_added = []
-                    
+
                     for _ in range(min(questions_to_generate, len(available_new_questions))):
                         if not available_new_questions:
                             break
-                            
+
                         category, question_data = random.choice(available_new_questions)
                         question, answer, vietnamese_answer = question_data
-                        
+
                         # Add to new questions pool and mark as shown
                         new_question = {"question": question, "answer": answer.lower(), "vietnamese_answer": vietnamese_answer}
                         game['new_questions'].append(new_question)
                         game['shown_questions'].add(question)
                         questions_added.append(question)
-                        
+
                         # Remove from available list to avoid duplicates in this batch
                         available_new_questions.remove((category, question_data))
-                        
+
                         logger.info(f"Generated new QNA question ({category}): {question}")
-                    
+
                     # Batch database operations for better performance
                     if questions_added:
                         self._batch_mark_questions_shown(guild_id, questions_added)
-                    
+
                     game['last_generation_time'] = datetime.utcnow()
-                    
+
                     # Reset waiting message flag when new questions are available
                     game['waiting_message_sent'] = False
                 elif not available_new_questions:
                     # All questions used, but DON'T reset database - keep persistent history
                     logger.info("All questions used, waiting for manual reset")
                     await asyncio.sleep(5)  # Faster wait when no questions available
-                
+
             except Exception as e:
                 logger.error(f"Error in QNA generation loop: {e}")
                 break
-        
+
     async def _check_raid_protection(self, member):
         """Check for mass join attacks"""
         guild_id = str(member.guild.id)
         config = self.config_manager.get_guild_config(guild_id)
-        
+
         if not config['raid_protection']['enabled']:
             return
-            
+
         now = datetime.utcnow()
         if guild_id not in self.recent_joins:
             self.recent_joins[guild_id] = []
-            
+
         # Clean old joins
         cutoff = now - timedelta(seconds=config['raid_protection']['time_window'])
         self.recent_joins[guild_id] = [
             join_time for join_time in self.recent_joins[guild_id]
             if join_time > cutoff
         ]
-        
+
         # Add current join
         self.recent_joins[guild_id].append(now)
-        
+
         # Check if threshold exceeded
         if len(self.recent_joins[guild_id]) >= config['raid_protection']['max_joins']:
             # Record raid detection
             self.monitor.record_detection('raid', guild_id, {'joins_count': len(self.recent_joins[guild_id])})
             await self._handle_raid_detected(member.guild)
-            
+
     async def _handle_raid_detected(self, guild):
         """Handle detected raid"""
         logger.warning(f"Raid detected in {guild.name}")
-        
+
         config = self.config_manager.get_guild_config(str(guild.id))
         action = config['raid_protection']['action']
-        
+
         if action == 'lockdown':
             # Enable verification for all new members temporarily
             config['verification']['enabled'] = True
             self.config_manager.save_guild_config(str(guild.id), config)
-            
+
         # Log the event
         await self._log_action(guild, "Raid Protection", f"Raid detected - {action} activated")
-        
+
     async def _handle_suspicious_member(self, member):
         """Handle members flagged as suspicious"""
         guild_id = str(member.guild.id)
         config = self.config_manager.get_guild_config(guild_id)
         action = config['bot_detection']['action']
-        
+
         logger.warning(f"Suspicious member detected: {member} in {member.guild.name}")
-        
+
         # Record detection event
         self.monitor.record_detection('bot', guild_id, {'member_id': str(member.id), 'member_name': str(member)})
-        
+
         if action == 'kick':
             await self.moderation.kick_member(member, "Suspicious bot-like behavior")
             self.monitor.record_action('kick', guild_id, str(member), "Suspicious bot-like behavior")
@@ -1233,13 +1233,13 @@ class AntiSpamBot(commands.Bot):
         elif action == 'quarantine':
             await self.moderation.quarantine_member(member)
             self.monitor.record_action('quarantine', guild_id, str(member), "Suspicious bot-like behavior")
-            
+
         await self._log_action(
             member.guild,
             "Bot Detection",
             f"Suspicious member {member} - Action: {action}"
         )
-        
+
     async def _start_verification(self, member):
         """Start captcha verification process for new member"""
         try:
@@ -1247,7 +1247,7 @@ class AntiSpamBot(commands.Bot):
             num1 = random.randint(1, 10)
             num2 = random.randint(1, 10)
             answer = num1 + num2
-            
+
             # Store the verification data
             verification_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
             self.pending_verifications[member.id] = {
@@ -1256,7 +1256,7 @@ class AntiSpamBot(commands.Bot):
                 'attempts': 0,
                 'timestamp': datetime.utcnow()
             }
-            
+
             embed = discord.Embed(
                 title="🔐 Account Verification Required",
                 description=f"Welcome to **{member.guild.name}**!\n\n🤖 To verify you're human and gain access to the server, please solve this simple math problem:",
@@ -1278,42 +1278,42 @@ class AntiSpamBot(commands.Bot):
                 inline=True
             )
             embed.set_footer(text="AntiBot Protection • Reply with the answer to this DM")
-            
+
             # Send DM to member
             dm_channel = await member.create_dm()
             await dm_channel.send(embed=embed)
-            
+
             # Apply quarantine role temporarily
             await self.moderation.quarantine_member(member)
-            
+
             logger.info(f"Captcha verification started for {member} - Answer: {answer}")
-            
+
             # Set timeout to remove verification after 5 minutes
             asyncio.create_task(self._verification_timeout(member.id, dm_channel, member))
-            
+
         except discord.Forbidden:
             logger.warning(f"Could not send verification DM to {member}")
             # If can't DM, don't quarantine - might be a legitimate user with DMs disabled
         except Exception as e:
             logger.error(f"Error starting verification for {member}: {e}")
-            
+
     async def _handle_spam_message(self, message):
         """Handle detected spam message"""
         logger.warning(f"Spam detected from {message.author} in {message.guild.name}")
-        
+
         # Record spam detection
         self.monitor.record_detection('spam', str(message.guild.id), {'user_id': str(message.author.id), 'content': message.content[:100]})
-        
+
         # Delete the message
         try:
             await message.delete()
         except discord.NotFound:
             pass
-            
+
         # Apply action to user
         config = self.config_manager.get_guild_config(str(message.guild.id))
         action = config['spam_detection']['action']
-        
+
         if action == 'timeout':
             await self.moderation.timeout_member(message.author, duration=300)  # 5 minutes
             self.monitor.record_action('timeout', str(message.guild.id), str(message.author), "Spamming")
@@ -1323,41 +1323,41 @@ class AntiSpamBot(commands.Bot):
         elif action == 'ban':
             await self.moderation.ban_member(message.author, "Spamming")
             self.monitor.record_action('ban', str(message.guild.id), str(message.author), "Spamming")
-            
+
         await self._log_action(
             message.guild,
             "Spam Detection",
             f"Spam from {message.author} - Action: {action}"
         )
-    
+
     async def _handle_verification_response(self, message):
         """Handle verification responses in DMs"""
         user_id = message.author.id
-        
+
         if user_id not in self.pending_verifications:
             return
-        
+
         verification_data = self.pending_verifications[user_id]
-        
+
         try:
             user_answer = int(message.content.strip())
             correct_answer = verification_data['answer']
-            
+
             if user_answer == correct_answer:
                 # Correct answer - verify the user
                 del self.pending_verifications[user_id]
-                
+
                 # Find the member in all guilds
                 member = None
                 for guild in self.guilds:
                     member = guild.get_member(user_id)
                     if member:
                         break
-                
+
                 if member:
                     # Remove quarantine
                     await self.moderation.remove_quarantine(member)
-                    
+
                     success_embed = discord.Embed(
                         title="✅ Verification Successful!",
                         description=f"Welcome to **{member.guild.name}**!\n\n🎉 You now have full access to the server.",
@@ -1365,32 +1365,32 @@ class AntiSpamBot(commands.Bot):
                     )
                     success_embed.set_footer(text="Thank you for keeping our server safe!")
                     await message.channel.send(embed=success_embed)
-                    
+
                     # Log successful verification
                     await self._log_action(
                         member.guild,
                         "Verification",
                         f"✅ {member} successfully completed captcha verification"
                     )
-                    
+
                     # Record successful verification
                     self.monitor.record_verification(str(member.guild.id), True, str(member.id))
                     logger.info(f"User {member} successfully verified")
             else:
                 # Wrong answer
                 verification_data['attempts'] += 1
-                
+
                 if verification_data['attempts'] >= 3:
                     # Too many failed attempts
                     del self.pending_verifications[user_id]
-                    
+
                     fail_embed = discord.Embed(
                         title="❌ Verification Failed",
                         description="Too many incorrect attempts. You will be removed from the server.\n\nIf you believe this is an error, please contact server administrators.",
                         color=0xff4444
                     )
                     await message.channel.send(embed=fail_embed)
-                    
+
                     # Find and kick the member
                     for guild in self.guilds:
                         member = guild.get_member(user_id)
@@ -1413,7 +1413,7 @@ class AntiSpamBot(commands.Bot):
                         color=0xffa500
                     )
                     await message.channel.send(embed=retry_embed)
-                    
+
         except ValueError:
             # Not a number
             error_embed = discord.Embed(
@@ -1424,7 +1424,7 @@ class AntiSpamBot(commands.Bot):
             await message.channel.send(embed=error_embed)
         except Exception as e:
             logger.error(f"Error handling verification response: {e}")
-    
+
     async def _verification_timeout(self, user_id: int, dm_channel, member: discord.Member):
         """Handle verification timeout after 5 minutes"""
         await asyncio.sleep(300)  # 5 minutes
@@ -1440,19 +1440,19 @@ class AntiSpamBot(commands.Bot):
                 await self.moderation.kick_member(member, "Failed to complete verification within time limit")
             except Exception as e:
                 logger.error(f"Error handling verification timeout: {e}")
-        
+
     async def _log_action(self, guild, action_type, description):
         """Log moderation actions"""
         guild_id = str(guild.id)
         config = self.config_manager.get_guild_config(guild_id)
-        
+
         if not config['logging']['enabled']:
             return
-            
+
         log_channel_id = config['logging']['channel_id']
         if not log_channel_id:
             return
-            
+
         try:
             log_channel = guild.get_channel(int(log_channel_id))
             if log_channel:
@@ -1468,7 +1468,7 @@ class AntiSpamBot(commands.Bot):
                     "Raid Protection": "⚡",
                     "Verification": "🔐"
                 }
-                
+
                 embed = discord.Embed(
                     title=f"{action_icons.get(action_type, '🛡️')} {action_type}",
                     description=f"**Security Alert**\n{description}",
@@ -1476,12 +1476,12 @@ class AntiSpamBot(commands.Bot):
                     timestamp=datetime.utcnow()
                 )
                 embed.set_footer(text="AntiBot Protection System", icon_url=guild.me.display_avatar.url if guild.me else None)
-                
+
                 # Add verification to action colors/icons
                 if action_type == "Verification":
                     embed.color = 0x00ff88 if "✅" in description else 0xff4444
                     embed.title = f"🔐 {action_type}"
-                
+
                 await log_channel.send(embed=embed)
         except Exception as e:
             logger.error(f"Failed to log action: {e}")
@@ -1490,7 +1490,7 @@ class AntiSpamBot(commands.Bot):
 async def main():
     """Main bot execution"""
     bot = AntiSpamBot()
-    
+
     # Configuration commands
     @bot.group(name='antispam')
     @commands.has_permissions(administrator=True)
@@ -1515,19 +1515,19 @@ async def main():
                 inline=False
             )
             await ctx.send(embed=embed)
-    
+
     @antispam.command(name='config')
     async def show_config(ctx):
         """Show current configuration"""
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
-        
+
         embed = discord.Embed(
             title="📊 Server Protection Status",
             description=f"🏛️ **{ctx.guild.name}** security configuration",
             color=0x00ff88
         )
         embed.set_footer(text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
-        
+
         status_emoji = "🟢" if config['enabled'] else "🔴"
         status_text = "**ACTIVE**" if config['enabled'] else "**DISABLED**"
         embed.add_field(
@@ -1535,69 +1535,69 @@ async def main():
             value=f"{status_emoji} {status_text}",
             inline=True
         )
-        
+
         action_emoji = {"kick": "👢", "ban": "🔨", "quarantine": "🔒"}.get(config['bot_detection']['action'], "⚠️")
         embed.add_field(
             name="🤖 Bot Detection",
             value=f"{action_emoji} **Action:** {config['bot_detection']['action'].title()}\n📅 **Min Age:** {config['bot_detection']['min_account_age_days']} days",
             inline=True
         )
-        
+
         spam_emoji = {"timeout": "⏰", "kick": "👢", "ban": "🔨"}.get(config['spam_detection']['action'], "⚠️")
         embed.add_field(
             name="🚫 Spam Detection",
             value=f"{spam_emoji} **Action:** {config['spam_detection']['action'].title()}\n💬 **Max Messages:** {config['spam_detection']['max_messages_per_window']}",
             inline=True
         )
-        
+
         await ctx.send(embed=embed)
-    
+
     @antispam.command(name='enable')
     async def enable_bot(ctx):
         """Enable anti-spam protection"""
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
         config['enabled'] = True
         bot.config_manager.save_guild_config(str(ctx.guild.id), config)
-        
+
         embed = discord.Embed(
             title="🟢 Protection Activated",
             description="🛡️ **Anti-bot protection is now ACTIVE**\n\nYour server is now protected from:\n🤖 Malicious bots\n🚫 Spam attacks\n⚡ Mass raids",
             color=0x00ff88
         )
         await ctx.send(embed=embed)
-    
+
     @antispam.command(name='disable')
     async def disable_bot(ctx):
         """Disable anti-spam protection"""
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
         config['enabled'] = False
         bot.config_manager.save_guild_config(str(ctx.guild.id), config)
-        
+
         embed = discord.Embed(
             title="🔴 Protection Disabled",
             description="⚠️ **Anti-bot protection is now INACTIVE**\n\nYour server is no longer protected.\nUse `?antispam enable` to reactivate.",
             color=0xff4444
         )
         await ctx.send(embed=embed)
-    
+
     @antispam.command(name='logchannel')
     async def set_log_channel(ctx, channel: Optional[discord.TextChannel] = None):
         """Set the logging channel"""
         if channel is None:
             channel = ctx.channel
-            
+
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
         config['logging']['channel_id'] = str(channel.id) if channel else None
         config['logging']['enabled'] = True
         bot.config_manager.save_guild_config(str(ctx.guild.id), config)
-        
+
         embed = discord.Embed(
             title="📝 Logging Channel Updated",
             description=f"📍 **Channel:** {channel.mention if channel else 'None'}\n\n🔍 All moderation actions will be logged here",
             color=0x5865f2
         )
         await ctx.send(embed=embed)
-    
+
     @antispam.command(name='whitelist')
     async def whitelist_user(ctx, member: discord.Member):
         """Add a user to the whitelist"""
@@ -1611,12 +1611,12 @@ async def main():
             await ctx.send(embed=embed)
         else:
             await ctx.send("❌ Failed to add user to whitelist")
-    
+
     @antispam.command(name='verification')
     async def toggle_verification(ctx, enabled: Optional[bool] = None):
         """Enable or disable captcha verification for new members"""
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
-        
+
         if enabled is None:
             # Show current status
             status = "🟢 ENABLED" if config['verification']['enabled'] else "🔴 DISABLED"
@@ -1630,23 +1630,23 @@ async def main():
             # Change status
             config['verification']['enabled'] = enabled
             bot.config_manager.save_guild_config(str(ctx.guild.id), config)
-            
+
             status_text = "ENABLED" if enabled else "DISABLED"
             status_emoji = "🟢" if enabled else "🔴"
             color = 0x00ff88 if enabled else 0xff4444
-            
+
             description = (
                 f"🔐 **Captcha verification is now {status_text}**\n\n"
                 f"{'New members will need to solve a math problem to gain access.' if enabled else 'New members will have immediate access.'}"
             )
-            
+
             embed = discord.Embed(
                 title=f"{status_emoji} Verification {status_text}",
                 description=description,
                 color=color
             )
             await ctx.send(embed=embed)
-    
+
     @antispam.command(name='verify')
     async def manual_verify(ctx, member: discord.Member):
         """Manually send verification challenge to a member"""
@@ -1658,17 +1658,17 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Start verification for the member
         await bot._start_verification(member)
-        
+
         embed = discord.Embed(
             title="📬 Verification Sent",
             description=f"Captcha verification has been sent to **{member.display_name}**.\n\nThey have 5 minutes to complete it.",
             color=0x5865f2
         )
         await ctx.send(embed=embed)
-    
+
     @antispam.command(name='stats')
     async def show_stats(ctx):
         """Show detection statistics"""
@@ -1676,7 +1676,7 @@ async def main():
         embed = await bot.monitor.generate_stats_embed(str(ctx.guild.id))
         embed.set_footer(text=f"AntiBot Protection • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         await ctx.send(embed=embed)
-    
+
     # Basic moderation commands
     @bot.command(name='kick')
     @commands.has_permissions(kick_members=True)
@@ -1699,7 +1699,7 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     @bot.command(name='ban')
     @commands.has_permissions(ban_members=True)
     async def ban_command(ctx, member: discord.Member, *, reason="No reason provided"):
@@ -1721,7 +1721,7 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     @bot.command(name='timeout')
     @commands.has_permissions(moderate_members=True)
     async def timeout_command(ctx, member: discord.Member, duration_str: str = "5m", *, reason="No reason provided"):
@@ -1737,7 +1737,7 @@ async def main():
                 )
                 await ctx.send(embed=embed)
                 return
-                
+
             # Discord max timeout is 28 days (2419200 seconds)
             if duration_seconds > 2419200:
                 embed = discord.Embed(
@@ -1747,7 +1747,7 @@ async def main():
                 )
                 await ctx.send(embed=embed)
                 return
-                
+
             success = await bot.moderation.timeout_member(member, duration_seconds, reason)
             if success:
                 embed = discord.Embed(
@@ -1766,7 +1766,7 @@ async def main():
                     color=0xff4444
                 )
                 await ctx.send(embed=embed)
-                
+
         except Exception as e:
             logger.error(f"Error in timeout command: {e}")
             embed = discord.Embed(
@@ -1775,7 +1775,7 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     @bot.command(name='quarantine')
     @commands.has_permissions(manage_roles=True)
     async def quarantine_command(ctx, member: discord.Member):
@@ -1797,7 +1797,7 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     # Utility Commands
     @bot.command(name='help')
     async def help_command(ctx):
@@ -1809,7 +1809,7 @@ async def main():
         )
         embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1234567890.png")
         embed.set_author(name="Command Center", icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
-        
+
         embed.add_field(
             name="🛡️ Security & Protection",
             value=(
@@ -1827,7 +1827,7 @@ async def main():
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="🔨 Moderation Arsenal",
             value=(
@@ -1840,7 +1840,7 @@ async def main():
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="🎮 Q&A Game System",
             value=(
@@ -1854,7 +1854,7 @@ async def main():
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="💰 Cash & Tài Xỉu System",
             value=(
@@ -1872,7 +1872,7 @@ async def main():
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="💖 Social Interactions",
             value=(
@@ -1885,7 +1885,7 @@ async def main():
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="🔧 Utility Tools",
             value=(
@@ -1897,7 +1897,7 @@ async def main():
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="📋 Usage Notes",
             value=(
@@ -1910,7 +1910,7 @@ async def main():
         )
         embed.set_footer(text=f"Serving {len(bot.guilds)} servers • All commands use ? prefix • Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
         await ctx.send(embed=embed)
-    
+
     @bot.command(name='status')
     async def status_command(ctx):
         """Show bot status and system information"""
@@ -1921,14 +1921,14 @@ async def main():
             timestamp=datetime.utcnow()
         )
         embed.set_thumbnail(url=bot.user.display_avatar.url if bot.user and bot.user.display_avatar else None)
-        
+
         # Bot info
         embed.add_field(
             name="🤖 Bot Information",
             value=f"**Name:** {bot.user.name if bot.user else 'Unknown'}\n**ID:** {bot.user.id if bot.user else 'Unknown'}\n**Ping:** {round(bot.latency * 1000)}ms",
             inline=True
         )
-        
+
         # Server stats
         total_members = sum(guild.member_count for guild in bot.guilds if guild.member_count)
         embed.add_field(
@@ -1936,7 +1936,7 @@ async def main():
             value=f"**Servers:** {len(bot.guilds)}\n**Total Members:** {total_members:,}\n**Active Games:** {len(bot.active_games)}",
             inline=True
         )
-        
+
         # Protection status for this guild
         config = bot.config_manager.get_guild_config(str(ctx.guild.id))
         protection_status = "🟢 ACTIVE" if config['enabled'] else "🔴 DISABLED"
@@ -1945,10 +1945,10 @@ async def main():
             value=f"**Status:** {protection_status}\n**Verification:** {'🟢 ON' if config['verification']['enabled'] else '🔴 OFF'}",
             inline=True
         )
-        
+
         embed.set_footer(text="All systems operational", icon_url=bot.user.display_avatar.url if bot.user and bot.user.display_avatar else None)
         await ctx.send(embed=embed)
-    
+
     @bot.command(name='echo')
     async def echo_command(ctx, *, message):
         """Repeat the user's message"""
@@ -1965,13 +1965,13 @@ async def main():
         except discord.errors.Forbidden:
             pass  # Bot doesn't have permission to delete messages
         await ctx.send(message)
-    
+
     # Game Commands
     @bot.command(name='qna')
     async def start_game(ctx):
         """Start a QNA game"""
         guild_id = str(ctx.guild.id)
-        
+
         if guild_id in bot.active_games:
             embed = discord.Embed(
                 title="🎮 QNA đã đang hoạt động",
@@ -1980,11 +1980,11 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Reset shown questions for a fresh game every time
         bot._reset_question_history(guild_id)
         shown_questions = set()  # Start with empty set for fresh game
-        
+
         # Start with a placeholder question - let the generation loop provide all real questions
         current_question = {
             "question": "🔄 Bắt đầu tạo câu hỏi mới...", 
@@ -1992,7 +1992,7 @@ async def main():
             "vietnamese_answer": "Đang khởi tạo...",
             "is_placeholder": True
         }
-        
+
         bot.active_games[guild_id] = {
             'questions': [],  # No hardcoded questions - all questions come from generation loop
             'current_question': current_question,
@@ -2009,9 +2009,9 @@ async def main():
             'new_questions': [],
             'waiting_message_sent': False  # Track if waiting message was sent
         }
-        
+
         # Don't mark placeholder questions as shown in database
-        
+
         embed = discord.Embed(
             title="🤔 Thử thách QNA đã kích hoạt!",
             description="**🧠 Đấu trường Hỏi & Đáp**\n\n*Kiểm tra kiến thức của bạn với các câu hỏi liên tục!*\n\n✨ **Sẵn sàng bắt đầu phiên QNA?**",
@@ -2028,18 +2028,18 @@ async def main():
             inline=False
         )
         embed.set_footer(text="✨ Dùng ?stop để kết thúc phiên QNA • ?skip nếu bí • Trả lời liên tục!", icon_url=ctx.author.display_avatar.url if ctx.author.display_avatar else None)
-        
+
         await ctx.send(embed=embed)
-        
+
         # Start continuous question loop
         asyncio.create_task(bot._qna_question_loop(guild_id))
         asyncio.create_task(bot._qna_generation_loop(guild_id))
-    
+
     @bot.command(name='stop')
     async def stop_game(ctx):
         """Stop the current QNA game"""
         guild_id = str(ctx.guild.id)
-        
+
         if guild_id not in bot.active_games:
             embed = discord.Embed(
                 title="❌ Không có trò chơi QNA",
@@ -2048,16 +2048,16 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Stop the continuous loops
         bot.active_games[guild_id]['running'] = False
         await _end_game(ctx, guild_id)
-    
+
     @bot.command(name='skip')
     async def skip_question(ctx):
         """Skip the current QNA question"""
         guild_id = str(ctx.guild.id)
-        
+
         if guild_id not in bot.active_games:
             embed = discord.Embed(
                 title="❌ No Active QNA",
@@ -2066,9 +2066,9 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         game = bot.active_games[guild_id]
-        
+
         # Show correct answer before skipping
         embed = discord.Embed(
             title="⏭️ Question Skipped",
@@ -2081,17 +2081,17 @@ async def main():
             inline=False
         )
         embed.set_footer(text="Next question coming up...")
-        
+
         await ctx.send(embed=embed)
-        
+
         # Mark as answered to trigger next question
         game['question_answered'] = True
-    
+
     @bot.command(name='leaderboard')
     async def show_leaderboard(ctx):
         """Show QNA game leaderboard"""
         guild_id = str(ctx.guild.id)
-        
+
         if guild_id not in bot.leaderboard or not bot.leaderboard[guild_id]:
             embed = discord.Embed(
                 title="📈 Bảng xếp hạng QNA",
@@ -2100,16 +2100,16 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Sort players by score
         sorted_players = sorted(bot.leaderboard[guild_id].items(), key=lambda x: x[1], reverse=True)
-        
+
         embed = discord.Embed(
             title="🏆 Bảng xếp hạng QNA",
             description="🧠 **Các người chơi QNA hàng đầu trong máy chủ**",
             color=0xffd700
         )
-        
+
         for i, (user_id, score) in enumerate(sorted_players[:10]):
             try:
                 user = await bot.fetch_user(int(user_id))
@@ -2121,18 +2121,18 @@ async def main():
                 )
             except:
                 continue
-        
+
         embed.set_footer(text="Chơi ?qna để leo lên bảng xếp hạng!")
         await ctx.send(embed=embed)
-    
+
     async def _end_game(ctx, guild_id):
         """End the QNA game and show results"""
         game = bot.active_games[guild_id]
         players = game['players']
-        
+
         # Stop the continuous loops
         game['running'] = False
-        
+
         if not players:
             embed = discord.Embed(
                 title="🎮 QNA kết thúc",
@@ -2144,21 +2144,21 @@ async def main():
             # Update leaderboard
             if guild_id not in bot.leaderboard:
                 bot.leaderboard[guild_id] = {}
-            
+
             for user_id, score in players.items():
                 if user_id not in bot.leaderboard[guild_id]:
                     bot.leaderboard[guild_id][user_id] = 0
                 bot.leaderboard[guild_id][user_id] += score
-            
+
             # Show final results
             sorted_players = sorted(players.items(), key=lambda x: x[1], reverse=True)
-            
+
             embed = discord.Embed(
                 title="🎮 Phiên QNA hoàn thành!",
                 description="🏁 **Kết quả cuối cùng**",
                 color=0x00ff88
             )
-            
+
             for i, (user_id, score) in enumerate(sorted_players[:5]):
                 try:
                     user = await bot.fetch_user(int(user_id))
@@ -2170,10 +2170,10 @@ async def main():
                     )
                 except:
                     continue
-            
+
             embed.set_footer(text="Phiên tuyệt vời mọi người! Dùng ?leaderboard để xem điểm tổng")
             await ctx.send(embed=embed)
-        
+
         # Clean up game data
         del bot.active_games[guild_id]
 
@@ -2189,7 +2189,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         if member == ctx.author:
             embed = discord.Embed(
                 title="💋 Tự hôn mình?",
@@ -2198,7 +2198,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         # Random kiss GIFs
         kiss_gifs = [
             "https://media.tenor.com/_8oadF3hZwIAAAAM/kiss.gif",
@@ -2208,9 +2208,9 @@ async def main():
             "https://media.tenor.com/z0UhWlFiC1EAAAAm/flamez-ivo.webp",
             "https://media.tenor.com/7kEaMuYWPYUAAAAm/haleys-ouo.webp"
         ]
-        
+
         selected_gif = random.choice(kiss_gifs)
-        
+
         embed = discord.Embed(
             title="💋 Kiss!",
             description=f"**{ctx.author.mention}** đã hôn vào môi của **{member.mention}**! 💕",
@@ -2218,7 +2218,7 @@ async def main():
         )
         embed.set_image(url=selected_gif)
         embed.set_footer(text="Thật ngọt ngào! 💖")
-        
+
         await ctx.send(embed=embed)
 
     @bot.command(name='hug')
@@ -2232,7 +2232,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         if member == ctx.author:
             embed = discord.Embed(
                 title="🤗 Tự ôm mình?",
@@ -2241,7 +2241,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         # Random hug GIFs
         hug_gifs = [
             "https://media.tenor.com/9lRjN-Sr204AAAAm/anime-anime-hug.webp",
@@ -2253,9 +2253,9 @@ async def main():
             "https://media.tenor.com/sl3rfZ7mQBsAAAAM/anime-hug-canary-princess.gif",
             "https://media.tenor.com/JzxgF3aebL0AAAAM/hug-hugging.gif"
         ]
-        
+
         selected_gif = random.choice(hug_gifs)
-        
+
         embed = discord.Embed(
             title="🤗 Hug!",
             description=f"**{ctx.author.mention}** đã ôm chặt **{member.mention}**! 💙",
@@ -2263,7 +2263,7 @@ async def main():
         )
         embed.set_image(url=selected_gif)
         embed.set_footer(text="Ấm áp và dễ thương! 🥰")
-        
+
         await ctx.send(embed=embed)
 
     @bot.command(name='hs')
@@ -2277,7 +2277,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         if member == ctx.author:
             embed = discord.Embed(
                 title="🤝 Tự bắt tay?",
@@ -2286,7 +2286,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         # Random handshake GIFs
         handshake_gifs = [
             "https://media.tenor.com/RWD2XL_CxdcAAAAM/hug.gif",
@@ -2296,9 +2296,9 @@ async def main():
             "https://media.tenor.com/DYJ2sNZQBkIAAAAM/handshake-shake-hands.gif",
             "https://media.tenor.com/c_KzMTlCXHQAAAAM/friends-handshake.gif"
         ]
-        
+
         selected_gif = random.choice(handshake_gifs)
-        
+
         embed = discord.Embed(
             title="🤝 Handshake!",
             description=f"**{ctx.author.mention}** đã bắt tay với **{member.mention}**! 🤝",
@@ -2306,7 +2306,7 @@ async def main():
         )
         embed.set_image(url=selected_gif)
         embed.set_footer(text="Tình bạn đẹp! 👫")
-        
+
         await ctx.send(embed=embed)
 
     @bot.command(name='f*ck')
@@ -2320,7 +2320,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         if member == ctx.author:
             embed = discord.Embed(
                 title="🖕 Tự chỉ mình?",
@@ -2329,7 +2329,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-            
+
         # Random middle finger GIFs
         middle_finger_gifs = [
             "https://media.tenor.com/YQpvQAW-2VcAAAAM/anime-middle-finger.gif",
@@ -2339,9 +2339,9 @@ async def main():
             "https://media.tenor.com/4wEUbVm8EEYAAAAM/anime-mad.gif",
             "https://media.tenor.com/zwKvQ9A-VFIAAAAM/fuck-you-middle-finger.gif"
         ]
-        
+
         selected_gif = random.choice(middle_finger_gifs)
-        
+
         embed = discord.Embed(
             title="🖕 F*ck You!",
             description=f"**{ctx.author.mention}** đã chỉ thẳng mặt **{member.mention}**! 🖕😤",
@@ -2349,7 +2349,7 @@ async def main():
         )
         embed.set_image(url=selected_gif)
         embed.set_footer(text="Ai bảo làm phiền! 😤🖕")
-        
+
         await ctx.send(embed=embed)
 
     # === CASH SYSTEM HELPER METHODS ===
@@ -2365,7 +2365,7 @@ async def main():
             else:
                 # Give new users some starting cash
                 return 1000, None, 0
-        
+
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -2388,12 +2388,12 @@ async def main():
             return 0, None, 0
         finally:
             connection.close()
-    
+
     def _update_user_cash(self, guild_id, user_id, cash_amount, last_daily=None, daily_streak=None):
         """Update user's cash amount and daily streak"""
         if not self.db_connection:
             return False
-        
+
         try:
             with self.db_connection.cursor() as cursor:
                 if last_daily is not None and daily_streak is not None:
@@ -2418,7 +2418,7 @@ async def main():
         except Exception as e:
             logger.error(f"Error updating user cash: {e}")
             return False
-    
+
     def _calculate_daily_reward(self, streak):
         """Calculate daily reward based on streak"""
         base_reward = 1000
@@ -2431,16 +2431,16 @@ async def main():
         else:
             # Continue increasing by 400 per day after day 3
             return 1500 + (400 * (streak - 2))
-    
+
     # === CASH SYSTEM COMMANDS ===
     @bot.command(name='money')
     async def show_money(ctx):
         """Show user's current money balance"""
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
-        
+
         current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
-        
+
         embed = discord.Embed(
             title="💰 Số dư tài khoản",
             description=f"**{ctx.author.mention}**",
@@ -2464,17 +2464,17 @@ async def main():
             )
         embed.set_footer(text="Dùng ?daily để nhận thưởng hàng ngày!")
         await ctx.send(embed=embed)
-    
+
     # === DAILY REWARD COMMAND ===
     @bot.command(name='daily')
     async def daily_reward(ctx):
         """Claim daily reward with streak bonus"""
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
-        
+
         current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         today = datetime.utcnow().date()
-        
+
         # Check if user already claimed today
         if last_daily == today:
             embed = discord.Embed(
@@ -2489,7 +2489,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Calculate new streak
         yesterday = today - timedelta(days=1)
         if last_daily == yesterday:
@@ -2498,14 +2498,14 @@ async def main():
             new_streak = 0
         else:
             new_streak = 0  # Reset streak if missed a day
-        
+
         # Calculate reward
         reward = bot._calculate_daily_reward(new_streak)
         new_cash = current_cash + reward
-        
+
         # Update database
         success = bot._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
-        
+
         if success:
             embed = discord.Embed(
                 title="🎁 Thưởng hàng ngày!",
@@ -2527,7 +2527,7 @@ async def main():
                 value=f"**{new_cash:,} cash**",
                 inline=True
             )
-            
+
             if new_streak > streak:
                 embed.add_field(
                     name="🚀 Bonus Streak!",
@@ -2540,7 +2540,7 @@ async def main():
                     value="Bạn đã bỏ lỡ một ngày, streak đã được reset về 1.",
                     inline=False
                 )
-            
+
             embed.set_footer(text="Nhớ quay lại vào ngày mai để duy trì streak! 🔥")
             await ctx.send(embed=embed)
         else:
@@ -2550,17 +2550,17 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     @bot.command(name='cashboard')
     async def cash_leaderboard(ctx, page: int = 1):
         """Show cash leaderboard with pagination"""
         guild_id = str(ctx.guild.id)
-        
+
         try:
             # Try database first, fall back to memory if database unavailable
             connection = bot._get_db_connection()
             users_data = []
-            
+
             if connection:
                 # Use database data
                 with connection.cursor() as cursor:
@@ -2582,12 +2582,12 @@ async def main():
                         cash = data.get('cash', 0)
                         streak = data.get('daily_streak', 0)
                         users_data.append((user_id, cash, streak))
-                
+
                 # Sort by cash (descending)
                 users_data.sort(key=lambda x: x[1], reverse=True)
-            
+
             total_users = len(users_data)
-            
+
             if total_users == 0:
                 embed = discord.Embed(
                     title="📈 Bảng xếp hạng Cash",
@@ -2596,11 +2596,11 @@ async def main():
                 )
                 await ctx.send(embed=embed)
                 return
-            
+
             # Calculate pagination
             per_page = 10
             total_pages = (total_users + per_page - 1) // per_page
-            
+
             if page < 1 or page > total_pages:
                 embed = discord.Embed(
                     title="❌ Trang không hợp lệ",
@@ -2609,23 +2609,23 @@ async def main():
                 )
                 await ctx.send(embed=embed)
                 return
-            
+
             # Get data for this page
             start_idx = (page - 1) * per_page
             end_idx = start_idx + per_page
             page_data = users_data[start_idx:end_idx]
-            
+
             embed = discord.Embed(
                 title="🏆 Bảng xếp hạng Cash",
                 description=f"💰 **Top người giàu nhất trong máy chủ**\n📄 Trang {page}/{total_pages}",
                 color=0xffd700
             )
-            
+
             for i, (user_id, cash, streak) in enumerate(page_data):
                 try:
                     user = await bot.fetch_user(int(user_id))
                     rank = start_idx + i + 1
-                    
+
                     if rank == 1:
                         rank_emoji = "🥇"
                     elif rank == 2:
@@ -2634,7 +2634,7 @@ async def main():
                         rank_emoji = "🥉"
                     else:
                         rank_emoji = f"{rank}."
-                    
+
                     embed.add_field(
                         name=f"{rank_emoji} {user.display_name}",
                         value=f"💰 **{cash:,} cash**\n🔥 {streak} ngày streak",
@@ -2643,12 +2643,12 @@ async def main():
                 except:
                     # Skip if user can't be fetched
                     continue
-            
+
             if total_pages > 1:
                 embed.set_footer(text=f"Dùng ?cashboard <số trang> để xem trang khác • Trang {page}/{total_pages}")
             else:
                 embed.set_footer(text="Dùng ?daily để kiếm cash!")
-            
+
             # Add note about data source
             if not connection:
                 embed.add_field(
@@ -2656,9 +2656,9 @@ async def main():
                     value="Dữ liệu từ bộ nhớ tạm (database không khả dụng)",
                     inline=False
                 )
-            
+
             await ctx.send(embed=embed)
-                
+
         except Exception as e:
             logger.error(f"Error getting cash leaderboard: {e}")
             embed = discord.Embed(
@@ -2667,7 +2667,7 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     # === OVER/UNDER GAME COMMANDS ===
     @bot.command(name='tx')
     async def start_overunder(ctx):
@@ -2675,7 +2675,7 @@ async def main():
         guild_id = str(ctx.guild.id)
         channel_id = str(ctx.channel.id)
         game_id = f"{guild_id}_{channel_id}_{int(datetime.utcnow().timestamp())}"
-        
+
         # Check if there's already an active game in this channel
         if guild_id in bot.overunder_games:
             for existing_game_id, game_data in bot.overunder_games[guild_id].items():
@@ -2687,13 +2687,13 @@ async def main():
                     )
                     await ctx.send(embed=embed)
                     return
-        
+
         # Create new game
         end_time = datetime.utcnow() + timedelta(seconds=150)
-        
+
         if guild_id not in bot.overunder_games:
             bot.overunder_games[guild_id] = {}
-        
+
         bot.overunder_games[guild_id][game_id] = {
             'channel_id': channel_id,
             'end_time': end_time,
@@ -2702,7 +2702,7 @@ async def main():
             'result': None,
             'end_task': None
         }
-        
+
         # Store in database
         try:
             connection = bot._get_db_connection()
@@ -2716,7 +2716,7 @@ async def main():
                 connection.close()
         except Exception as e:
             logger.error(f"Error storing game in database: {e}")
-        
+
         embed = discord.Embed(
             title="🎲 Game Tài Xỉu Bắt Đầu!",
             description="**Chào mừng đến với game Tài Xỉu!**\n\nHãy đặt cược xem kết quả sẽ là Tài hay Xỉu!",
@@ -2743,13 +2743,13 @@ async def main():
             inline=False
         )
         embed.set_footer(text=f"Game ID: {game_id} • Kết thúc lúc {end_time.strftime('%H:%M:%S')}")
-        
+
         await ctx.send(embed=embed)
-        
+
         # Schedule game end
         game_task = asyncio.create_task(bot._end_overunder_game(guild_id, game_id))
         bot.overunder_games[guild_id][game_id]['end_task'] = game_task
-    
+
     @bot.command(name='cuoc')
     async def place_bet(ctx, side=None, amount=None):
         """Place a bet in the Tai/Xiu game"""
@@ -2761,11 +2761,11 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         guild_id = str(ctx.guild.id)
         channel_id = str(ctx.channel.id)
         user_id = str(ctx.author.id)
-        
+
         # Validate side
         side = side.lower()
         if side not in ['tai', 'xiu']:
@@ -2776,18 +2776,18 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Validate amount with support for k/m/b/t/qa/qi/sx suffixes and 'all'
         def parse_amount(amount_str):
             """Parse amount string with k/m/b/t/qa/qi/sx suffixes and 'all' for all available money"""
             amount_str = amount_str.lower().strip()
-            
+
             # Handle 'all' - return special value that we'll replace with actual cash
             if amount_str == 'all':
                 return -1  # Special value to indicate "all money"
-            
+
             multiplier = 1
-            
+
             if amount_str.endswith('sx'):
                 multiplier = 1_000_000_000_000_000_000_000  # Sextillion
                 amount_str = amount_str[:-2]
@@ -2809,7 +2809,7 @@ async def main():
             elif amount_str.endswith('k'):
                 multiplier = 1_000  # Thousand
                 amount_str = amount_str[:-1]
-            
+
             try:
                 base_amount = float(amount_str)
                 if base_amount <= 0:
@@ -2817,7 +2817,7 @@ async def main():
                 return int(base_amount * multiplier)
             except (ValueError, OverflowError):
                 raise ValueError()
-        
+
         try:
             bet_amount = parse_amount(amount)
         except ValueError:
@@ -2828,7 +2828,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Handle 'all' - get user's current cash and bet all of it
         if bet_amount == -1:
             current_cash, _, _ = bot._get_user_cash(guild_id, user_id)
@@ -2841,7 +2841,7 @@ async def main():
                 await ctx.send(embed=embed)
                 return
             bet_amount = current_cash
-        
+
         # Check if there's an active game in this channel
         active_game = None
         if guild_id in bot.overunder_games:
@@ -2849,7 +2849,7 @@ async def main():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     active_game = (game_id, game_data)
                     break
-        
+
         if not active_game:
             embed = discord.Embed(
                 title="❌ Không có game nào đang diễn ra!",
@@ -2858,9 +2858,9 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         game_id, game_data = active_game
-        
+
         # Check if game has ended
         if datetime.utcnow() >= game_data['end_time']:
             embed = discord.Embed(
@@ -2870,7 +2870,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Check user's cash
         current_cash, _, _ = bot._get_user_cash(guild_id, user_id)
         if current_cash < bet_amount:
@@ -2881,7 +2881,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Check if user already has a bet in this game
         for bet in game_data['bets']:
             if bet['user_id'] == user_id:
@@ -2892,10 +2892,10 @@ async def main():
                 )
                 await ctx.send(embed=embed)
                 return
-        
+
         # Deduct cash from user
         success = bot._update_user_cash(guild_id, user_id, -bet_amount, None, None)
-        
+
         if not success:
             embed = discord.Embed(
                 title="❌ Lỗi hệ thống!",
@@ -2904,10 +2904,10 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Calculate remaining cash
         remaining_cash = current_cash - bet_amount
-        
+
         # Add bet to game
         bet_data = {
             'user_id': user_id,
@@ -2916,10 +2916,10 @@ async def main():
             'amount': bet_amount
         }
         game_data['bets'].append(bet_data)
-        
+
         # Note: Bets are stored in memory during the game
         # Final results are saved to database when game ends
-        
+
         # Beautiful success embed
         embed = discord.Embed(
             title="🎯 Đặt Cược Thành Công!",
@@ -2951,19 +2951,19 @@ async def main():
             value=f"**{len(game_data['bets'])}** người",
             inline=True
         )
-        
+
         time_left = game_data['end_time'] - datetime.utcnow()
         minutes, seconds = divmod(int(time_left.total_seconds()), 60)
         embed.set_footer(text=f"Thời gian còn lại: {minutes}:{seconds:02d} • Chúc may mắn! 🍀")
-        
+
         await ctx.send(embed=embed)
-    
+
     @bot.command(name='txstop')
     async def stop_overunder(ctx):
         """Stop the current Tai/Xiu game instantly and show results"""
         guild_id = str(ctx.guild.id)
         channel_id = str(ctx.channel.id)
-        
+
         # Find active game in this channel
         active_game_id = None
         if guild_id in bot.overunder_games:
@@ -2971,7 +2971,7 @@ async def main():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     active_game_id = game_id
                     break
-        
+
         if not active_game_id:
             embed = discord.Embed(
                 title="❌ Không có game Tài Xỉu",
@@ -2980,7 +2980,7 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Stop the game instantly
         embed = discord.Embed(
             title="⏹️ Dừng game Tài Xỉu",
@@ -2988,16 +2988,16 @@ async def main():
             color=0xffa500
         )
         await ctx.send(embed=embed)
-        
+
         # End game immediately
         await bot._end_overunder_game(guild_id, active_game_id, instant_stop=True)
-    
+
     @bot.command(name='txshow')
     async def show_overunder_result(ctx):
         """Show game result instantly but continue the game"""
         guild_id = str(ctx.guild.id)
         channel_id = str(ctx.channel.id)
-        
+
         # Find active game in this channel
         active_game_id = None
         active_game_data = None
@@ -3007,7 +3007,7 @@ async def main():
                     active_game_id = game_id
                     active_game_data = game_data
                     break
-        
+
         if not active_game_id:
             embed = discord.Embed(
                 title="❌ Không có game Tài Xỉu",
@@ -3016,22 +3016,22 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Generate random result for preview (50/50 chance)
         preview_result = random.choice(['tai', 'xiu'])
-        
+
         # Show result preview
         embed = discord.Embed(
             title="🔮 Kết quả trước khi kết thúc!",
             description=f"**Kết quả hiện tại sẽ là: {preview_result.upper()}** 🎲\n\n⚠️ *Đây chỉ là xem trước! Game vẫn tiếp tục và kết quả có thể thay đổi khi game kết thúc.*",
             color=0xffa500
         )
-        
+
         # Show current bets
         if active_game_data['bets']:
             tai_bets = [bet for bet in active_game_data['bets'] if bet['side'] == 'tai']
             xiu_bets = [bet for bet in active_game_data['bets'] if bet['side'] == 'xiu']
-            
+
             if tai_bets:
                 tai_text = "\n".join([f"🔸 **{bet['username']}** - {bet['amount']:,} cash" for bet in tai_bets])
                 embed.add_field(
@@ -3039,7 +3039,7 @@ async def main():
                     value=tai_text,
                     inline=True
                 )
-            
+
             if xiu_bets:
                 xiu_text = "\n".join([f"🔸 **{bet['username']}** - {bet['amount']:,} cash" for bet in xiu_bets])
                 embed.add_field(
@@ -3047,11 +3047,11 @@ async def main():
                     value=xiu_text,
                     inline=True
                 )
-            
+
             # Show who would win/lose with current result
             winners = tai_bets if preview_result == 'tai' else xiu_bets
             losers = xiu_bets if preview_result == 'tai' else tai_bets
-            
+
             if winners:
                 winners_text = f"{len(winners)} người thắng"
                 if preview_result == 'tai':
@@ -3060,7 +3060,7 @@ async def main():
                     winners_text += " (cược XỈU)"
             else:
                 winners_text = "Không có ai thắng"
-                
+
             embed.add_field(
                 name="🏆 Nếu kết quả này",
                 value=winners_text,
@@ -3072,12 +3072,12 @@ async def main():
                 value="Không có ai đặt cược trong game này.",
                 inline=False
             )
-        
+
         # Calculate remaining time
         import datetime
         remaining = active_game_data['end_time'] - datetime.datetime.utcnow()
         remaining_seconds = max(0, int(remaining.total_seconds()))
-        
+
         embed.set_footer(text=f"Game ID: {active_game_id} • Còn lại: {remaining_seconds} giây • Kết quả có thể thay đổi!")
         await ctx.send(embed=embed)
 
@@ -3087,24 +3087,24 @@ async def main():
         """Reset question history for the server (Admin only)"""
         guild_id = str(ctx.guild.id)
         bot._reset_question_history(guild_id)
-        
+
         embed = discord.Embed(
             title="🔄 Lịch sử câu hỏi đã được reset",
             description="Tất cả câu hỏi có thể được hỏi lại từ đầu.\n\nNgười chơi sẽ gặp các câu hỏi đã hỏi trước đó trong phiên chơi mới.",
             color=0x00ff88
         )
         await ctx.send(embed=embed)
-    
+
     @bot.command(name='moneyhack')
     @commands.has_permissions(administrator=True)
     async def moneyhack(ctx, amount: int, user: discord.Member = None):
         """Give money to a user (Admin only)"""
         if user is None:
             user = ctx.author
-        
+
         guild_id = str(ctx.guild.id)
         user_id = str(user.id)
-        
+
         if amount <= 0:
             embed = discord.Embed(
                 title="❌ Số tiền không hợp lệ",
@@ -3113,14 +3113,14 @@ async def main():
             )
             await ctx.send(embed=embed)
             return
-        
+
         # Get current cash
         current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         new_cash = current_cash + amount
-        
+
         # Update user's cash
         success = bot._update_user_cash(guild_id, user_id, new_cash, last_daily, streak)
-        
+
         if success:
             embed = discord.Embed(
                 title="💰 Money Hack Thành Công!",
@@ -3146,7 +3146,7 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     @bot.command(name='give')
     async def give_money(ctx, user: discord.Member = None, amount: str = None):
         """Give money to another user"""
@@ -3177,13 +3177,13 @@ async def main():
         def parse_amount(amount_str):
             """Parse amount string with k/m/b/t/qa/qi/sx suffixes and 'all' for all available money"""
             amount_str = amount_str.lower().strip()
-            
+
             # Handle 'all' - return special value that we'll replace with actual cash
             if amount_str == 'all':
                 return -1  # Special value to indicate "all money"
-            
+
             multiplier = 1
-            
+
             if amount_str.endswith('sx'):
                 multiplier = 1_000_000_000_000_000_000_000  # Sextillion
                 amount_str = amount_str[:-2]
@@ -3205,7 +3205,7 @@ async def main():
             elif amount_str.endswith('k'):
                 multiplier = 1_000  # Thousand
                 amount_str = amount_str[:-1]
-            
+
             try:
                 base_amount = float(amount_str)
                 if base_amount <= 0:
@@ -3442,19 +3442,19 @@ async def main():
             description=f"**Kết quả:** {result.upper()} {'🔺' if result == 'tai' else '🔻'}\n\n*Kết quả được đặt bởi Admin*",
             color=0x00ff88 if result == 'tai' else 0xff6b6b
         )
-        
+
         result_embed.add_field(
             name="🏆 Người thắng",
             value=f"**{total_winners}** người thắng\n💰 Tổng thưởng: **{total_winnings * 2:,} cash**",
             inline=True
         )
-        
+
         result_embed.add_field(
             name="💸 Người thua",
             value=f"**{total_losers}** người thua\n💔 Mất: **{sum(bet['amount'] for bet in losers):,} cash**",
             inline=True
         )
-        
+
         result_embed.add_field(
             name="💡 Lưu ý",
             value="Người thắng nhận lại 2x số tiền đã cược!\nDùng `?tx` để bắt đầu game mới.",
@@ -3468,7 +3468,7 @@ async def main():
             del bot.overunder_games[guild_id][game_id]
             if not bot.overunder_games[guild_id]:
                 del bot.overunder_games[guild_id]
-    
+
     # Error handling
     @bot.event
     async def on_command_error(ctx, error):
@@ -3497,14 +3497,14 @@ async def main():
                 color=0xff4444
             )
             await ctx.send(embed=embed)
-    
+
     # Get bot token from environment
     token = os.getenv('DISCORD_BOT_TOKEN')
     if not token:
         logger.error("DISCORD_BOT_TOKEN environment variable not set!")
         print("Please set the DISCORD_BOT_TOKEN environment variable")
         return
-    
+
     # Start bot with automatic restart capability
     try:
         await bot.start(token)
@@ -3516,7 +3516,7 @@ async def start_bot_with_auto_restart():
     """Main bot execution with auto-restart capability"""
     restart_count = 0
     max_restarts = 10
-    
+
     while restart_count < max_restarts:
         try:
             logger.info(f"Starting bot system (attempt {restart_count + 1}/{max_restarts})")
@@ -3528,7 +3528,7 @@ async def start_bot_with_auto_restart():
         except Exception as e:
             restart_count += 1
             logger.error(f"Bot system crashed (attempt {restart_count}): {e}")
-            
+
             if restart_count < max_restarts:
                 logger.info(f"Restarting bot system in 5 seconds... ({restart_count}/{max_restarts})")
                 await asyncio.sleep(5)

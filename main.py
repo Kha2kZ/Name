@@ -125,6 +125,9 @@ class AntiSpamBot(commands.Bot):
 
         # Over/Under game tracking
         self.overunder_games = {}
+        
+        # Auto-cycle tracking for continuous txshow
+        self.overunder_autocycle = {}
 
         # In-memory cash storage when database isn't available
         self.user_cash_memory = {}
@@ -830,6 +833,70 @@ class AntiSpamBot(commands.Bot):
         embed.set_footer(text=f"Game ID: {game_id} • Cảm ơn bạn đã tham gia! 🎉")
 
         await channel.send(embed=embed)
+
+        # Check for auto-cycle and start new game if enabled
+        channel_key = f"{guild_id}_{game_data['channel_id']}"
+        if channel_key in self.overunder_autocycle:
+            # Wait a moment then auto-start new game
+            await asyncio.sleep(2)
+            
+            # Create new auto-game
+            new_game_id = f"{guild_id}_{game_data['channel_id']}_{int(datetime.utcnow().timestamp())}"
+            end_time = datetime.utcnow() + timedelta(seconds=30)
+
+            if guild_id not in self.overunder_games:
+                self.overunder_games[guild_id] = {}
+
+            self.overunder_games[guild_id][new_game_id] = {
+                'channel_id': game_data['channel_id'],
+                'end_time': end_time,
+                'bets': [],
+                'status': 'active',
+                'result': None,
+                'end_task': None
+            }
+
+            # Store new game in database
+            try:
+                connection = self._get_db_connection()
+                if connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "INSERT INTO overunder_games (game_id, guild_id, channel_id) VALUES (%s, %s, %s)",
+                            (new_game_id, guild_id, game_data['channel_id'])
+                        )
+                        connection.commit()
+                    connection.close()
+            except Exception as e:
+                logger.error(f"Error storing auto-cycle game: {e}")
+
+            # Start the background task to end the new game (this creates the continuous cycle)
+            task = asyncio.create_task(self._end_overunder_game(guild_id, new_game_id))
+            self.overunder_games[guild_id][new_game_id]['end_task'] = task
+
+            # Send auto-start announcement
+            auto_embed = discord.Embed(
+                title="🔄 Game Tự Động Tiếp Theo!",
+                description="**Game Tài Xỉu mới đã tự động bắt đầu!**\n\nCh\u1ebf \u0111\u1ed9 t\u1ef1 \u0111\u1ed9ng \u0111ang b\u1eadt - game s\u1ebd ti\u1ebfp t\u1ee5c sau m\u1ed7i v\u00f2ng!",
+                color=0x00ff88
+            )
+            auto_embed.add_field(
+                name="⏰ Thời gian",
+                value="**30 giây** để đặt cược",
+                inline=True
+            )
+            auto_embed.add_field(
+                name="💰 Cách chơi",
+                value="Dùng lệnh `?cuoc <tai/xiu> <số tiền>`",
+                inline=True
+            )
+            auto_embed.add_field(
+                name="🛑 Dừng tự động",
+                value="Dùng `?gamestop` để dừng hoàn toàn",
+                inline=True
+            )
+            auto_embed.set_footer(text="Chế độ tự động: Game sẽ tiếp tục sau mỗi vòng!")
+            await channel.send(embed=auto_embed)
 
         # Clean up game data
         del self.overunder_games[guild_id][game_id]
@@ -2871,7 +2938,7 @@ async def main():
                     return
 
         # Create new game
-        end_time = datetime.utcnow() + timedelta(seconds=150)
+        end_time = datetime.utcnow() + timedelta(seconds=30)
 
         if guild_id not in bot.overunder_games:
             bot.overunder_games[guild_id] = {}
@@ -2891,8 +2958,8 @@ async def main():
             if connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO overunder_games (game_id, guild_id, channel_id, end_time) VALUES (%s, %s, %s, %s)",
-                        (game_id, guild_id, channel_id, end_time)
+                        "INSERT INTO overunder_games (game_id, guild_id, channel_id) VALUES (%s, %s, %s)",
+                        (game_id, guild_id, channel_id)
                     )
                     connection.commit()
                 connection.close()
@@ -2906,7 +2973,7 @@ async def main():
         )
         embed.add_field(
             name="⏰ Thời gian",
-            value="**150 giây** để đặt cược",
+            value="**30 giây** để đặt cược",
             inline=True
         )
         embed.add_field(
@@ -3143,18 +3210,17 @@ async def main():
 
     @bot.command(name='txshow')
     async def show_overunder_result(ctx):
-        """Show game result instantly but continue the game"""
+        """Start continuous auto-cycling: end current round, show winner, auto-start new rounds until gamestop"""
         guild_id = str(ctx.guild.id)
         channel_id = str(ctx.channel.id)
+        channel_key = f"{guild_id}_{channel_id}"
 
         # Find active game in this channel
         active_game_id = None
-        active_game_data = None
         if guild_id in bot.overunder_games:
             for game_id, game_data in bot.overunder_games[guild_id].items():
                 if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
                     active_game_id = game_id
-                    active_game_data = game_data
                     break
 
         if not active_game_id:
@@ -3166,69 +3232,19 @@ async def main():
             await ctx.send(embed=embed)
             return
 
-        # Generate random result for preview (50/50 chance)
-        preview_result = random.choice(['tai', 'xiu'])
-
-        # Show result preview
+        # Enable auto-cycle for this channel
+        bot.overunder_autocycle[channel_key] = True
+        
+        # End current game immediately and show results
         embed = discord.Embed(
-            title="🔮 Kết quả trước khi kết thúc!",
-            description=f"**Kết quả hiện tại sẽ là: {preview_result.upper()}** 🎲\n\n⚠️ *Đây chỉ là xem trước! Game vẫn tiếp tục và kết quả có thể thay đổi khi game kết thúc.*",
-            color=0xffa500
+            title="🔄 Bắt đầu chế độ tự động!",
+            description="Game hiện tại sẽ kết thúc và tự động bắt đầu game mới liên tục!\n\nDùng `?gamestop` để dừng.",
+            color=0x00ff88
         )
-
-        # Show current bets
-        if active_game_data['bets']:
-            tai_bets = [bet for bet in active_game_data['bets'] if bet['side'] == 'tai']
-            xiu_bets = [bet for bet in active_game_data['bets'] if bet['side'] == 'xiu']
-
-            if tai_bets:
-                tai_text = "\n".join([f"🔸 **{bet['username']}** - {bet['amount']:,} cash" for bet in tai_bets])
-                embed.add_field(
-                    name=f"🟢 Cược TÀI ({len(tai_bets)} người)",
-                    value=tai_text,
-                    inline=True
-                )
-
-            if xiu_bets:
-                xiu_text = "\n".join([f"🔸 **{bet['username']}** - {bet['amount']:,} cash" for bet in xiu_bets])
-                embed.add_field(
-                    name=f"🔴 Cược XỈU ({len(xiu_bets)} người)",
-                    value=xiu_text,
-                    inline=True
-                )
-
-            # Show who would win/lose with current result
-            winners = tai_bets if preview_result == 'tai' else xiu_bets
-            losers = xiu_bets if preview_result == 'tai' else tai_bets
-
-            if winners:
-                winners_text = f"{len(winners)} người thắng"
-                if preview_result == 'tai':
-                    winners_text += " (cược TÀI)"
-                else:
-                    winners_text += " (cược XỈU)"
-            else:
-                winners_text = "Không có ai thắng"
-
-            embed.add_field(
-                name="🏆 Nếu kết quả này",
-                value=winners_text,
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🤷‍♂️ Chưa có cược",
-                value="Không có ai đặt cược trong game này.",
-                inline=False
-            )
-
-        # Calculate remaining time
-        import datetime
-        remaining = active_game_data['end_time'] - datetime.datetime.utcnow()
-        remaining_seconds = max(0, int(remaining.total_seconds()))
-
-        embed.set_footer(text=f"Game ID: {active_game_id} • Còn lại: {remaining_seconds} giây • Kết quả có thể thay đổi!")
         await ctx.send(embed=embed)
+
+        # End game immediately - this will trigger auto-cycle
+        await bot._end_overunder_game(guild_id, active_game_id, instant_stop=True)
 
     @bot.command(name='gamestop')
     async def stop_overunder(ctx):
@@ -3253,12 +3269,21 @@ async def main():
             await ctx.send(embed=embed)
             return
 
-        # Stop the game instantly
-        embed = discord.Embed(
-            title="⏹️ Dừng game Tài Xỉu",
-            description="Game Tài Xỉu đã được dừng! Đang công bố kết quả...",
-            color=0xffa500
-        )
+        # Stop auto-cycle if active
+        channel_key = f"{guild_id}_{channel_id}"
+        if channel_key in bot.overunder_autocycle:
+            del bot.overunder_autocycle[channel_key]
+            embed = discord.Embed(
+                title="⏹️ Dừng chế độ tự động",
+                description="Đã tắt chế độ tự động và dừng game Tài Xỉu! Đang công bố kết quả cuối cùng...",
+                color=0xffa500
+            )
+        else:
+            embed = discord.Embed(
+                title="⏹️ Dừng game Tài Xỉu",
+                description="Game Tài Xỉu đã được dừng! Đang công bố kết quả...",
+                color=0xffa500
+            )
         await ctx.send(embed=embed)
 
         # End game immediately

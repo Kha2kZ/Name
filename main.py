@@ -129,6 +129,9 @@ class AntiSpamBot(commands.Bot):
         # In-memory cash storage when database isn't available
         self.user_cash_memory = {}
 
+        # Per-user locks for preventing race conditions in daily rewards
+        self._daily_locks = {}
+
         # File-based backup system
         self.backup_file_path = "user_cash_backup.json"
         self._load_backup_data()
@@ -557,46 +560,76 @@ class AntiSpamBot(commands.Bot):
             # Continue increasing by 400 per day after day 3
             return 1500 + (400 * (streak - 2))
 
-    def _claim_daily_reward(self, guild_id, user_id, today):
+    async def _claim_daily_reward(self, guild_id, user_id, today):
         """Atomically claim daily reward - prevents double claiming"""
+        # Normalize today to date object to prevent type mismatch issues
+        if isinstance(today, datetime):
+            today = today.date()
+        elif isinstance(today, str):
+            try:
+                today = datetime.strptime(today, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                today = datetime.utcnow().date()
+        
         connection = self._get_db_connection()
         if not connection:
-            # Use in-memory storage when database isn't available
+            # Use in-memory storage with proper locking when database isn't available
             key = f"{guild_id}_{user_id}"
-            if key not in self.user_cash_memory:
-                self.user_cash_memory[key] = {'cash': 1000, 'last_daily': None, 'daily_streak': 0}
             
-            current_data = self.user_cash_memory[key]
-            last_daily = current_data.get('last_daily')
+            # Get or create per-user lock to prevent race conditions
+            if key not in self._daily_locks:
+                self._daily_locks[key] = asyncio.Lock()
             
-            # Check if already claimed today
-            if last_daily == today:
-                return None  # Already claimed
-            
-            # Calculate streak and reward
-            current_cash = current_data.get('cash', 1000)
-            current_streak = current_data.get('daily_streak', 0)
-            yesterday = today - timedelta(days=1)
-            
-            if last_daily == yesterday:
-                new_streak = current_streak + 1
-            elif last_daily is None:
-                new_streak = 0
-            else:
-                new_streak = 0  # Reset streak if missed a day
-            
-            reward = self._calculate_daily_reward(new_streak)
-            new_cash = current_cash + reward
-            
-            # Update in-memory data
-            self.user_cash_memory[key].update({
-                'cash': new_cash,
-                'last_daily': today,
-                'daily_streak': new_streak
-            })
-            
-            self._save_backup_data()
-            return (reward, new_cash, new_streak, current_streak)
+            async with self._daily_locks[key]:
+                # Initialize user data if not exists
+                if key not in self.user_cash_memory:
+                    self.user_cash_memory[key] = {'cash': 1000, 'last_daily': None, 'daily_streak': 0}
+                
+                current_data = self.user_cash_memory[key]
+                last_daily = current_data.get('last_daily')
+                
+                # Normalize last_daily to date object for proper comparison
+                if isinstance(last_daily, datetime):
+                    last_daily = last_daily.date()
+                elif isinstance(last_daily, str):
+                    try:
+                        last_daily = datetime.strptime(last_daily, '%Y-%m-%d').date()
+                    except (ValueError, TypeError):
+                        last_daily = None
+                
+                # Log the comparison for debugging
+                logger.debug(f"Daily claim check: user {key}, today={today} (type={type(today)}), last_daily={last_daily} (type={type(last_daily)})")
+                
+                # Check if already claimed today
+                if last_daily == today:
+                    logger.info(f"User {key} already claimed daily reward today ({today})")
+                    return None  # Already claimed
+                
+                # Re-read current cash to avoid lost updates from concurrent operations
+                current_cash = self.user_cash_memory[key].get('cash', 1000)
+                current_streak = current_data.get('daily_streak', 0)
+                yesterday = today - timedelta(days=1)
+                
+                if last_daily == yesterday:
+                    new_streak = current_streak + 1
+                elif last_daily is None:
+                    new_streak = 0
+                else:
+                    new_streak = 0  # Reset streak if missed a day
+                
+                reward = self._calculate_daily_reward(new_streak)
+                new_cash = current_cash + reward
+                
+                # Update in-memory data atomically
+                self.user_cash_memory[key].update({
+                    'cash': new_cash,
+                    'last_daily': today,
+                    'daily_streak': new_streak
+                })
+                
+                logger.info(f"User {key} claimed daily reward: {reward} cash, streak: {new_streak}, total: {new_cash}")
+                self._save_backup_data()
+                return (reward, new_cash, new_streak, current_streak)
 
         try:
             with connection.cursor() as cursor:
@@ -617,9 +650,22 @@ class AntiSpamBot(commands.Bot):
                 else:
                     current_cash, last_daily, current_streak = result
                 
+                # Normalize last_daily from database
+                if isinstance(last_daily, datetime):
+                    last_daily = last_daily.date()
+                elif isinstance(last_daily, str):
+                    try:
+                        last_daily = datetime.strptime(last_daily, '%Y-%m-%d').date()
+                    except (ValueError, TypeError):
+                        last_daily = None
+                
+                # Log the comparison for debugging
+                logger.debug(f"Daily claim DB check: user {guild_id}_{user_id}, today={today} (type={type(today)}), last_daily={last_daily} (type={type(last_daily)})")
+                
                 # Check if already claimed today
                 if last_daily == today:
                     connection.rollback()
+                    logger.info(f"User {guild_id}_{user_id} already claimed daily reward today ({today}) - DB path")
                     return None  # Already claimed
                 
                 # Calculate streak and reward
@@ -2588,7 +2634,7 @@ async def main():
         today = datetime.utcnow().date()
 
         # Use atomic function to prevent race conditions and multiple earnings
-        result = bot._claim_daily_reward(guild_id, user_id, today)
+        result = await bot._claim_daily_reward(guild_id, user_id, today)
         
         # Check if already claimed today
         if result is None:

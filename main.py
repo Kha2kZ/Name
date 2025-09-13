@@ -632,11 +632,12 @@ class AntiSpamBot(commands.Bot):
                         last_daily = None
                 
                 # Log the comparison for debugging
-                logger.debug(f"Daily claim check: user {key}, today={today} (type={type(today)}), last_daily={last_daily} (type={type(last_daily)})")
+                logger.info(f"DAILY DEBUG MEMORY: user {key}, today={today} (type={type(today)}), last_daily={last_daily} (type={type(last_daily)})")
+                logger.info(f"DAILY DEBUG MEMORY: Comparison result: {last_daily == today}")
                 
                 # Check if already claimed today
                 if last_daily == today:
-                    logger.info(f"User {key} already claimed daily reward today ({today})")
+                    logger.info(f"DAILY DEBUG BLOCKED: User {key} already claimed daily reward today ({today})")
                     return None  # Already claimed
                 
                 # Re-read current cash to avoid lost updates from concurrent operations
@@ -2666,9 +2667,21 @@ async def main():
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
         today = datetime.utcnow().date()
+        key = f"{guild_id}_{user_id}"
+        
+        logger.info(f"DAILY DEBUG: User {ctx.author.name} ({key}) attempting daily claim")
+        logger.info(f"DAILY DEBUG: Today date is {today} (type: {type(today)})")
+        
+        # Log current state before claim attempt
+        if key in bot.user_cash_memory:
+            current_data = bot.user_cash_memory[key]
+            logger.info(f"DAILY DEBUG: User current data: {current_data}")
+        else:
+            logger.info(f"DAILY DEBUG: User not found in memory")
 
         # Use atomic function to prevent race conditions and multiple earnings
         result = await bot._claim_daily_reward(guild_id, user_id, today)
+        logger.info(f"DAILY DEBUG: Claim result: {result}")
         
         # Check if already claimed today
         if result is None:

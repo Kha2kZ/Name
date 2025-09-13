@@ -70,12 +70,12 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Member Kicked",
-                description=f"{member.mention} has been kicked.",
+                description=f"**{member.display_name}** has been kicked from the server.",
                 color=discord.Color.orange(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             await ctx.send(embed=embed)
             
@@ -110,12 +110,12 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Member Banned",
-                description=f"{member.mention} has been banned.",
+                description=f"**{member.display_name}** has been banned from the server.",
                 color=discord.Color.red(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             await ctx.send(embed=embed)
             
@@ -143,12 +143,12 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Member Unbanned",
-                description=f"{user.mention} has been unbanned.",
+                description=f"**{user.name}** has been unbanned.",
                 color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             await ctx.send(embed=embed)
             
@@ -190,12 +190,12 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Member Muted",
-                description=f"{member.mention} has been muted.",
+                description=f"**{member.display_name}** has been muted.",
                 color=discord.Color.dark_grey(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             if duration:
                 unmute_time = datetime.utcnow() + timedelta(minutes=duration)
@@ -243,12 +243,12 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Member Unmuted",
-                description=f"{member.mention} has been unmuted.",
+                description=f"**{member.display_name}** has been unmuted.",
                 color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             await ctx.send(embed=embed)
             
@@ -309,13 +309,13 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Member Timed Out",
-                description=f"{member.mention} has been timed out.",
+                description=f"**{member.display_name}** has been timed out.",
                 color=discord.Color.dark_red(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Duration", value=f"{duration} minutes", inline=True)
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Duration", value=f"**{duration} minutes** (expires <t:{int((datetime.utcnow() + timedelta(minutes=duration)).timestamp())}:R>)", inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             await ctx.send(embed=embed)
             
@@ -346,12 +346,12 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Timeout Removed",
-                description=f"Timeout removed from {member.mention}.",
+                description=f"Timeout removed from **{member.display_name}**.",
                 color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             
             await ctx.send(embed=embed)
             
@@ -392,14 +392,14 @@ class ModerationCog(commands.Cog):
             
             embed = discord.Embed(
                 title="Messages Purged",
-                description=f"Deleted {deleted_count} messages.",
+                description=f"Deleted **{deleted_count} messages**.",
                 color=discord.Color.blue(),
                 timestamp=datetime.utcnow()
             )
-            embed.add_field(name="Channel", value=ctx.channel.mention, inline=True)
-            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            embed.add_field(name="Channel", value=f"{ctx.channel.mention} (`#{ctx.channel.name}`)", inline=True)
+            embed.add_field(name="Moderator", value=f"{ctx.author.mention} (`{ctx.author}`)", inline=True)
             if member:
-                embed.add_field(name="Target User", value=member.mention, inline=True)
+                embed.add_field(name="Target User", value=f"{member.mention} (`{member}`)", inline=True)
             
             # Send confirmation and delete it after a few seconds
             confirm_msg = await ctx.send(embed=embed)

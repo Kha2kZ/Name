@@ -237,12 +237,12 @@ class ModerationTools:
         try:
             embed = discord.Embed(
                 title=f"Moderation Action: {action.title()}",
-                description=f"You have been {action} from **{guild_name}**",
+                description=f"You have been **{action}** from **{guild_name}**",
                 color=discord.Color.red(),
                 timestamp=datetime.utcnow()
             )
             
-            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
             
             if action in ["warned", "timed out"]:
                 embed.add_field(
@@ -295,15 +295,14 @@ class ModerationTools:
                 timestamp=datetime.utcnow()
             )
             
-            embed.add_field(name="Target", value=f"{target} ({target.id})", inline=True)
-            embed.add_field(name="Moderator", value=f"{moderator} ({moderator.id})", inline=True)
-            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Target", value=f"{target} (`{target.id}`)", inline=True)
+            embed.add_field(name="Moderator", value=f"{moderator} (`{moderator.id}`)", inline=True)
+            embed.add_field(name="Reason", value=f"**{reason}**", inline=False)
             
             if isinstance(target, discord.Member):
                 embed.add_field(name="Account Created", value=target.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"), inline=True)
                 if target.joined_at:
                     embed.add_field(name="Joined Server", value=target.joined_at.strftime("%Y-%m-%d %H:%M:%S UTC"), inline=True)
-            
             await log_channel.send(embed=embed)
             
         except Exception as e:

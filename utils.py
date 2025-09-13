@@ -206,7 +206,7 @@ def create_error_embed(title: str, description: str) -> discord.Embed:
     """Create a standardized error embed"""
     embed = discord.Embed(
         title=f"❌ {title}",
-        description=description,
+        description=f"**{description}**",
         color=discord.Color.red()
     )
     return embed
@@ -215,7 +215,7 @@ def create_success_embed(title: str, description: str) -> discord.Embed:
     """Create a standardized success embed"""
     embed = discord.Embed(
         title=f"✅ {title}",
-        description=description,
+        description=f"**{description}**",
         color=discord.Color.green()
     )
     return embed
@@ -224,7 +224,7 @@ def create_warning_embed(title: str, description: str) -> discord.Embed:
     """Create a standardized warning embed"""
     embed = discord.Embed(
         title=f"⚠️ {title}",
-        description=description,
+        description=f"**{description}**",
         color=discord.Color.orange()
     )
     return embed

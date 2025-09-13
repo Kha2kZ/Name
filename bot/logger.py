@@ -139,7 +139,7 @@ class BotLogger:
         
         embed = discord.Embed(
             title=f"{emoji} {event_type.replace('_', ' ').title()}",
-            description=description,
+            description=f"**{description}**",
             color=color,
             timestamp=datetime.utcnow()
         )
@@ -148,8 +148,7 @@ class BotLogger:
             embed.add_field(name="User", value=f"{user.mention}\n`{user.id}`", inline=True)
             if hasattr(user, 'created_at'):
                 account_age = (datetime.utcnow() - user.created_at.replace(tzinfo=None)).days
-                embed.add_field(name="Account Age", value=f"{account_age} days", inline=True)
-        
+                embed.add_field(name="Account Age", value=f"**{account_age} days**", inline=True)
         return embed
     
     def _create_action_embed(self, action: str, description: str, moderator: discord.User, target: Optional[discord.User] = None) -> discord.Embed:
@@ -193,7 +192,7 @@ class BotLogger:
         
         embed = discord.Embed(
             title=f"{emoji} {action.replace('_', ' ').title()}",
-            description=description,
+            description=f"**{description}**",
             color=color,
             timestamp=datetime.utcnow()
         )
@@ -204,8 +203,7 @@ class BotLogger:
             embed.add_field(name="Target", value=f"{target.mention}\n`{target.id}`", inline=True)
             if hasattr(target, 'created_at'):
                 account_age = (datetime.utcnow() - target.created_at.replace(tzinfo=None)).days
-                embed.add_field(name="Target Account Age", value=f"{account_age} days", inline=True)
-        
+                embed.add_field(name="Target Account Age", value=f"**{account_age} days**", inline=True)
         return embed
     
     async def get_recent_logs(self, guild_id: int, limit: int = 10) -> list:

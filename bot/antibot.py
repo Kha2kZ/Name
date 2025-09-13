@@ -343,11 +343,10 @@ class AntiBotCog(commands.Cog):
             color=discord.Color.orange() if score > 50 else discord.Color.green()
         )
         
-        embed.add_field(name="Bot Detection Score", value=f"{score}%", inline=True)
-        embed.add_field(name="Current Suspicion", value=f"{current_suspicion}", inline=True)
-        embed.add_field(name="Account Age", value=f"{(datetime.utcnow() - member.created_at).days} days", inline=True)
+        embed.add_field(name="Bot Detection Score", value=f"**{score}%**", inline=True)
+        embed.add_field(name="Current Suspicion", value=f"**{current_suspicion}**", inline=True)
+        embed.add_field(name="Account Age", value=f"**{(datetime.utcnow() - member.created_at).days} days**", inline=True)
         
         if reasons:
             embed.add_field(name="Detection Reasons", value="\n".join(f"• {reason}" for reason in reasons), inline=False)
-        
         await ctx.send(embed=embed)

@@ -543,6 +543,101 @@ class AntiSpamBot(commands.Bot):
             # Continue increasing by 400 per day after day 3
             return 1500 + (400 * (streak - 2))
 
+    def _claim_daily_reward(self, guild_id, user_id, today):
+        """Atomically claim daily reward - prevents double claiming"""
+        connection = self._get_db_connection()
+        if not connection:
+            # Use in-memory storage when database isn't available
+            key = f"{guild_id}_{user_id}"
+            if key not in self.user_cash_memory:
+                self.user_cash_memory[key] = {'cash': 1000, 'last_daily': None, 'daily_streak': 0}
+            
+            current_data = self.user_cash_memory[key]
+            last_daily = current_data.get('last_daily')
+            
+            # Check if already claimed today
+            if last_daily == today:
+                return None  # Already claimed
+            
+            # Calculate streak and reward
+            current_cash = current_data.get('cash', 1000)
+            current_streak = current_data.get('daily_streak', 0)
+            yesterday = today - timedelta(days=1)
+            
+            if last_daily == yesterday:
+                new_streak = current_streak + 1
+            elif last_daily is None:
+                new_streak = 0
+            else:
+                new_streak = 0  # Reset streak if missed a day
+            
+            reward = self._calculate_daily_reward(new_streak)
+            new_cash = current_cash + reward
+            
+            # Update in-memory data
+            self.user_cash_memory[key].update({
+                'cash': new_cash,
+                'last_daily': today,
+                'daily_streak': new_streak
+            })
+            
+            self._save_backup_data()
+            return (reward, new_cash, new_streak, current_streak)
+
+        try:
+            with connection.cursor() as cursor:
+                # First, get current user data with row locking to prevent race conditions
+                cursor.execute(
+                    "SELECT cash, last_daily, daily_streak FROM user_cash WHERE guild_id = %s AND user_id = %s FOR UPDATE",
+                    (str(guild_id), str(user_id))
+                )
+                result = cursor.fetchone()
+                
+                if not result:
+                    # Create new user
+                    cursor.execute(
+                        "INSERT INTO user_cash (guild_id, user_id, cash, last_daily, daily_streak) VALUES (%s, %s, %s, %s, %s)",
+                        (str(guild_id), str(user_id), 1000, None, 0)
+                    )
+                    current_cash, last_daily, current_streak = 1000, None, 0
+                else:
+                    current_cash, last_daily, current_streak = result
+                
+                # Check if already claimed today
+                if last_daily == today:
+                    connection.rollback()
+                    return None  # Already claimed
+                
+                # Calculate streak and reward
+                yesterday = today - timedelta(days=1)
+                if last_daily == yesterday:
+                    new_streak = current_streak + 1
+                elif last_daily is None:
+                    new_streak = 0
+                else:
+                    new_streak = 0  # Reset streak if missed a day
+                
+                reward = self._calculate_daily_reward(new_streak)
+                new_cash = current_cash + reward
+                
+                # Update user data atomically
+                cursor.execute(
+                    "UPDATE user_cash SET cash = %s, last_daily = %s, daily_streak = %s WHERE guild_id = %s AND user_id = %s",
+                    (new_cash, today, new_streak, str(guild_id), str(user_id))
+                )
+                
+                connection.commit()
+                return (reward, new_cash, new_streak, current_streak)
+                
+        except Exception as e:
+            logger.error(f"Error claiming daily reward: {e}")
+            if connection:
+                connection.rollback()
+            return False  # Database error
+        finally:
+            if connection:
+                connection.close()
+
     async def _end_overunder_game(self, guild_id, game_id, instant_stop=False):
         """End the Over/Under game and distribute winnings"""
         if not instant_stop:
@@ -2471,12 +2566,14 @@ async def main():
         """Claim daily reward with streak bonus"""
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
-
-        current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
         today = datetime.utcnow().date()
 
-        # Check if user already claimed today
-        if last_daily == today:
+        # Use atomic function to prevent race conditions and multiple earnings
+        result = bot._claim_daily_reward(guild_id, user_id, today)
+        
+        # Check if already claimed today
+        if result is None:
+            current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
             embed = discord.Embed(
                 title="⏰ Đã nhận thưởng hôm nay!",
                 description=f"Bạn đã nhận thưởng hàng ngày rồi!\n\n💰 **Số dư hiện tại:** {current_cash:,} cash\n🔥 **Streak hiện tại:** {streak} ngày",
@@ -2490,66 +2587,56 @@ async def main():
             await ctx.send(embed=embed)
             return
 
-        # Calculate new streak
-        yesterday = today - timedelta(days=1)
-        if last_daily == yesterday:
-            new_streak = streak + 1
-        elif last_daily is None:
-            new_streak = 0
-        else:
-            new_streak = 0  # Reset streak if missed a day
-
-        # Calculate reward
-        reward = bot._calculate_daily_reward(new_streak)
-        new_cash = current_cash + reward
-
-        # Update database
-        success = bot._update_user_cash(guild_id, user_id, new_cash, today, new_streak)
-
-        if success:
+        # Check for database error
+        if result is False:
             embed = discord.Embed(
-                title="🎁 Thưởng hàng ngày!",
-                description=f"**{ctx.author.mention}** đã nhận thưởng hàng ngày!",
-                color=0x00ff88
-            )
-            embed.add_field(
-                name="💰 Thưởng nhận được",
-                value=f"**+{reward:,} cash**",
-                inline=True
-            )
-            embed.add_field(
-                name="🔥 Streak",
-                value=f"**{new_streak + 1} ngày**",
-                inline=True
-            )
-            embed.add_field(
-                name="💳 Số dư mới",
-                value=f"**{new_cash:,} cash**",
-                inline=True
-            )
-
-            if new_streak > streak:
-                embed.add_field(
-                    name="🚀 Bonus Streak!",
-                    value=f"Streak tăng lên {new_streak + 1} ngày! Thưởng ngày mai sẽ cao hơn!",
-                    inline=False
-                )
-            elif new_streak == 0 and last_daily is not None:
-                embed.add_field(
-                    name="💔 Streak bị reset",
-                    value="Bạn đã bỏ lỡ một ngày, streak đã được reset về 1.",
-                    inline=False
-                )
-
-            embed.set_footer(text="Nhớ quay lại vào ngày mai để duy trì streak! 🔥")
-            await ctx.send(embed=embed)
-        else:
-            embed = discord.Embed(
-                title="❌ Lỗi hệ thống",
-                description="Không thể xử lý thưởng hàng ngày. Vui lòng thử lại sau.",
+                title="❌ Lỗi Database",
+                description="Có lỗi xảy ra khi xử lý thưởng hàng ngày. Vui lòng thử lại sau.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
+            return
+
+        # Successfully claimed - result is (reward, new_cash, new_streak, old_streak)
+        reward, new_cash, new_streak, old_streak = result
+
+        # Create success embed
+        embed = discord.Embed(
+            title="🎁 Thưởng hàng ngày!",
+            description=f"**{ctx.author.mention}** đã nhận thưởng hàng ngày!",
+            color=0x00ff88
+        )
+        embed.add_field(
+            name="💰 Thưởng nhận được",
+            value=f"**+{reward:,} cash**",
+            inline=True
+        )
+        embed.add_field(
+            name="🔥 Streak",
+            value=f"**{new_streak + 1} ngày**",
+            inline=True
+        )
+        embed.add_field(
+            name="💳 Số dư mới",
+            value=f"**{new_cash:,} cash**",
+            inline=True
+        )
+
+        if new_streak > old_streak:
+            embed.add_field(
+                name="🚀 Bonus Streak!",
+                value=f"Streak tăng lên {new_streak + 1} ngày! Thưởng ngày mai sẽ cao hơn!",
+                inline=False
+            )
+        elif new_streak == 0 and old_streak > 0:
+            embed.add_field(
+                name="💔 Streak bị reset",
+                value="Bạn đã bỏ lỡ một ngày, streak đã được reset về 1.",
+                inline=False
+            )
+
+        embed.set_footer(text="Nhớ quay lại vào ngày mai để duy trì streak! 🔥")
+        await ctx.send(embed=embed)
 
     @bot.command(name='cashboard')
     async def cash_leaderboard(ctx, page: int = 1):

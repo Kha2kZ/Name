@@ -218,17 +218,51 @@ class AntiSpamBot(commands.Bot):
                     if hasattr(processed_data['last_daily'], 'isoformat'):
                         processed_data['last_daily'] = processed_data['last_daily'].isoformat()
 
-                # Only overwrite existing data if current data seems more valuable
+                # Always update with current data to ensure daily claim persistence
                 if key in existing_data:
-                    existing_cash = existing_data[key].get('cash', 1000)
-                    current_cash = processed_data.get('cash', 1000)
-
-                    # Only update if current data is clearly more recent or valuable
-                    # (higher cash, or more recent activity)
-                    if (current_cash > existing_cash or 
-                        processed_data.get('last_daily') and not existing_data[key].get('last_daily')):
+                    existing_data_info = existing_data[key]
+                    current_last_daily = processed_data.get('last_daily')
+                    existing_last_daily = existing_data_info.get('last_daily')
+                    
+                    # Always prioritize more recent last_daily dates to prevent claim resets
+                    should_update = False
+                    
+                    if current_last_daily and existing_last_daily:
+                        # Compare dates - prioritize more recent claims
+                        try:
+                            if isinstance(current_last_daily, str):
+                                current_date = datetime.strptime(current_last_daily, '%Y-%m-%d').date()
+                            else:
+                                current_date = current_last_daily if hasattr(current_last_daily, 'year') else datetime.utcnow().date()
+                                
+                            if isinstance(existing_last_daily, str):
+                                existing_date = datetime.strptime(existing_last_daily, '%Y-%m-%d').date()
+                            else:
+                                existing_date = existing_last_daily if hasattr(existing_last_daily, 'year') else datetime.utcnow().date()
+                            
+                            # Update if current claim is same day or newer
+                            should_update = current_date >= existing_date
+                            
+                        except (ValueError, TypeError, AttributeError):
+                            # If date parsing fails, update anyway to be safe
+                            should_update = True
+                            logger.warning(f"Date parsing failed for user {key}, updating anyway")
+                    elif current_last_daily and not existing_last_daily:
+                        # Current has claim data, existing doesn't
+                        should_update = True
+                    else:
+                        # Use cash as tiebreaker if no last_daily comparison possible
+                        current_cash = processed_data.get('cash', 1000)
+                        existing_cash = existing_data_info.get('cash', 1000)
+                        should_update = current_cash >= existing_cash
+                    
+                    if should_update:
                         merged_data[key] = processed_data
-                        logger.debug(f"Updated user {key}: cash {existing_cash} -> {current_cash}")
+                        logger.debug(f"Updated user {key}: ensuring daily claim persistence")
+                    else:
+                        # Keep existing data
+                        merged_data[key] = existing_data_info
+                        logger.debug(f"Kept existing data for user {key}")
                 else:
                     # New user, add them
                     merged_data[key] = processed_data

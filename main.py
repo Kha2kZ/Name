@@ -2077,6 +2077,8 @@ async def main():
                 "?antispam verification  → Toggle verification\n"
                 "?antispam verify        → Send verification\n"
                 "?antispam stats         → Server analytics\n"
+                "?verify [user]          → Manually verify a member\n"
+                "?suspicion [user]       → Check bot suspicion score\n"
                 "?status                 → System health\n"
                 "```"
             ),
@@ -2089,7 +2091,12 @@ async def main():
                 "```diff\n"
                 "+ ?kick <user> [reason]      → Remove member\n"
                 "+ ?ban <user> [reason]       → Permanent ban\n"
+                "+ ?unban <user_id> [reason]  → Unban user by ID\n"
                 "+ ?timeout <user> [duration] → Temporary mute\n"
+                "+ ?untimeout <user> [reason] → Remove timeout\n"
+                "+ ?mute <user> [time] [reason] → Mute member\n"
+                "+ ?unmute <user> [reason]    → Unmute member\n"
+                "+ ?purge <amount> [user]     → Delete messages\n"
                 "+ ?quarantine <user>         → Isolate threat\n"
                 "```"
             ),
@@ -2117,12 +2124,14 @@ async def main():
                 "?money            → Check your cash balance\n"
                 "?daily            → Claim daily reward (streak bonus)\n"
                 "?cashboard        → View cash leaderboard\n"
+                "?give <user> <amt> → Give money to another user\n"
                 "?moneyhack <amt>  → Give money to user (Admin)\n"
                 "\n"
                 "🎲 Tài Xỉu Over/Under Game:\n"
                 "?tx               → Start new game (150s to bet)\n"
                 "?cuoc <tai/xiu> <amt> → Place bet on outcome\n"
-                "?txstop           → End current game instantly\n"
+                "?txshow           → Auto-cycle games continuously\n"
+                "?gamestop         → Stop current game & auto-cycle\n"
                 "```"
             ),
             inline=False

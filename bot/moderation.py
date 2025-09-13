@@ -5,6 +5,7 @@ Provides standard moderation functionality (kick, ban, mute, etc.)
 
 import asyncio
 from datetime import datetime, timedelta
+from typing import Optional
 import discord
 from discord.ext import commands
 import logging
@@ -169,7 +170,7 @@ class ModerationCog(commands.Cog):
     @commands.command(name='mute')
     @commands.has_permissions(manage_roles=True)
     @commands.bot_has_permissions(manage_roles=True)
-    async def mute_member(self, ctx, member: discord.Member, duration: int = None, *, reason="No reason provided"):
+    async def mute_member(self, ctx, member: discord.Member, duration: Optional[int] = None, *, reason="No reason provided"):
         """Mute a member (duration in minutes, leave empty for permanent)"""
         if member.top_role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
             await ctx.send("❌ You cannot mute someone with equal or higher role.")
@@ -370,7 +371,7 @@ class ModerationCog(commands.Cog):
     @commands.command(name='purge', aliases=['clear'])
     @commands.has_permissions(manage_messages=True)
     @commands.bot_has_permissions(manage_messages=True)
-    async def purge_messages(self, ctx, amount: int, member: discord.Member = None):
+    async def purge_messages(self, ctx, amount: int, member: Optional[discord.Member] = None):
         """Delete messages (up to 100, optionally from specific member)"""
         if amount > 100:
             await ctx.send("❌ Cannot purge more than 100 messages at once.")

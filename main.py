@@ -832,7 +832,8 @@ class AntiSpamBot(commands.Bot):
 
         embed.set_footer(text=f"Game ID: {game_id} • Cảm ơn bạn đã tham gia! 🎉")
 
-        await channel.send(embed=embed)
+        if isinstance(channel, discord.TextChannel):
+            await channel.send(embed=embed)
 
         # Check for auto-cycle and start new game if enabled
         channel_key = f"{guild_id}_{game_data['channel_id']}"
@@ -896,7 +897,8 @@ class AntiSpamBot(commands.Bot):
                 inline=True
             )
             auto_embed.set_footer(text="Chế độ tự động: Game sẽ tiếp tục sau mỗi vòng!")
-            await channel.send(embed=auto_embed)
+            if isinstance(channel, discord.TextChannel):
+                await channel.send(embed=auto_embed)
 
         # Clean up game data
         del self.overunder_games[guild_id][game_id]
@@ -3305,7 +3307,7 @@ async def main():
 
     @bot.command(name='moneyhack')
     @commands.has_permissions(administrator=True)
-    async def moneyhack(ctx, amount: int, user: discord.Member = None):
+    async def moneyhack(ctx, amount: int, user: Optional[discord.Member] = None):
         """Give money to a user (Admin only)"""
         if user is None:
             user = ctx.author

@@ -7,6 +7,7 @@ import asyncio
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
+from typing import Optional
 import discord
 from discord.ext import commands, tasks
 import logging
@@ -29,7 +30,7 @@ class AntiBotCog(commands.Cog):
         # Start cleanup task
         self.cleanup_task.start()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         """Clean up when cog is unloaded"""
         self.cleanup_task.cancel()
     
@@ -298,7 +299,7 @@ class AntiBotCog(commands.Cog):
             logger.warning(f"Cannot timeout {user} - insufficient permissions")
     
     @commands.command(name='verify')
-    async def manual_verify(self, ctx, member: discord.Member = None):
+    async def manual_verify(self, ctx, member: Optional[discord.Member] = None):
         """Manually verify a member (removes verification restrictions)"""
         if not ctx.author.guild_permissions.manage_roles:
             await ctx.send("❌ You don't have permission to verify members.")
@@ -329,7 +330,7 @@ class AntiBotCog(commands.Cog):
     
     @commands.command(name='suspicion')
     @commands.has_permissions(manage_guild=True)
-    async def check_suspicion(self, ctx, member: discord.Member = None):
+    async def check_suspicion(self, ctx, member: Optional[discord.Member] = None):
         """Check suspicion score for a member"""
         if member is None:
             member = ctx.author

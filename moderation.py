@@ -285,7 +285,7 @@ class ModerationTools:
                 return
                 
             log_channel = guild.get_channel(int(log_channel_id))
-            if not log_channel:
+            if not log_channel or not isinstance(log_channel, discord.TextChannel):
                 return
             
             # Create embed

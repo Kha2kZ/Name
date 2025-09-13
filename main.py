@@ -269,7 +269,7 @@ class AntiSpamBot(commands.Bot):
         try:
             return psycopg2.connect(self.database_url)
         except Exception as e:
-            logger.error(f"Failed to create importase connection: {e}")
+            logger.error(f"Failed to create database connection: {e}")
             return None
 
     def _create_initial_tables(self):
@@ -2075,6 +2075,11 @@ async def main():
             pass  # Bot doesn't have permission to delete messages
         await ctx.send(message)
 
+    @bot.command(name='ping')
+    async def ping_command(ctx):
+        """Test if bot is online"""
+        await ctx.send("Tôi ở đây:)")
+
     # Game Commands
     @bot.command(name='qna')
     async def start_game(ctx):
@@ -3251,7 +3256,7 @@ async def main():
     @bot.command(name='give')
     async def give_money(ctx, user: discord.Member = None, amount: str = None):
         """Give money to another user"""
-        if not user or not amount:
+        if user is None or amount is None:
             embed = discord.Embed(
                 title="❌ Sai cú pháp!",
                 description="Cách sử dụng: `?give <@user> <số tiền>`\n\n**Ví dụ:**\n`?give @user 1000` - Tặng 1,000 cash\n`?give @user 5k` - Tặng 5,000 cash\n`?give @user 1.5m` - Tặng 1,500,000 cash\n`?give @user 2b` - Tặng 2,000,000,000 cash\n`?give @user 5t` - Tặng 5,000,000,000,000 cash\n`?give @user all` - Tặng tất cả tiền của bạn",
@@ -3398,7 +3403,7 @@ async def main():
     @commands.has_permissions(administrator=True)
     async def clear_money(ctx, user: discord.Member = None):
         """Reset a user's money to 0 (Admin only)"""
-        if not user:
+        if user is None:
             embed = discord.Embed(
                 title="❌ Sai cú pháp!",
                 description="Cách sử dụng: `?clear <@user>`\n\n**Ví dụ:**\n`?clear @user` - Reset tiền của user về 0",

@@ -1,3 +1,17 @@
+import nest_asyncio
+nest_asyncio.apply()
+import time
+import threading
+
+# Thread để ping runtime
+def keep_alive():
+    while True:
+        print("⏱️ Still alive")
+        time.sleep(60)
+
+t = threading.Thread(target=keep_alive)
+t.start()
+
 import discord
 from discord.ext import commands
 import asyncio

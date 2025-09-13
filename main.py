@@ -582,17 +582,17 @@ class AntiSpamBot(commands.Bot):
             connection.close()
 
     def _calculate_daily_reward(self, streak):
-        """Calculate daily reward based on streak"""
+        """Calculate daily reward based on streak (streak=1 is first day)"""
         base_reward = 1000
-        if streak == 0:
-            return base_reward
-        elif streak == 1:
-            return 1200
+        if streak <= 1:
+            return base_reward  # First day = 1000 cash
         elif streak == 2:
-            return 1500
+            return 1200  # Second consecutive day
+        elif streak == 3:
+            return 1500  # Third consecutive day
         else:
             # Continue increasing by 400 per day after day 3
-            return 1500 + (400 * (streak - 2))
+            return 1500 + (400 * (streak - 3))
 
     async def _claim_daily_reward(self, guild_id, user_id, today):
         """Atomically claim daily reward - prevents double claiming"""
@@ -631,13 +631,9 @@ class AntiSpamBot(commands.Bot):
                     except (ValueError, TypeError):
                         last_daily = None
                 
-                # Log the comparison for debugging
-                logger.info(f"DAILY DEBUG MEMORY: user {key}, today={today} (type={type(today)}), last_daily={last_daily} (type={type(last_daily)})")
-                logger.info(f"DAILY DEBUG MEMORY: Comparison result: {last_daily == today}")
-                
                 # Check if already claimed today
                 if last_daily == today:
-                    logger.info(f"DAILY DEBUG BLOCKED: User {key} already claimed daily reward today ({today})")
+                    logger.info(f"User {key} already claimed daily reward today ({today})")
                     return None  # Already claimed
                 
                 # Re-read current cash to avoid lost updates from concurrent operations
@@ -648,9 +644,9 @@ class AntiSpamBot(commands.Bot):
                 if last_daily == yesterday:
                     new_streak = current_streak + 1
                 elif last_daily is None:
-                    new_streak = 0
+                    new_streak = 1  # First daily claim = 1 day streak
                 else:
-                    new_streak = 0  # Reset streak if missed a day
+                    new_streak = 1  # Reset streak to 1 when claiming after missing days
                 
                 reward = self._calculate_daily_reward(new_streak)
                 new_cash = current_cash + reward
@@ -708,9 +704,9 @@ class AntiSpamBot(commands.Bot):
                 if last_daily == yesterday:
                     new_streak = current_streak + 1
                 elif last_daily is None:
-                    new_streak = 0
+                    new_streak = 1  # First daily claim = 1 day streak
                 else:
-                    new_streak = 0  # Reset streak if missed a day
+                    new_streak = 1  # Reset streak to 1 when claiming after missing days
                 
                 reward = self._calculate_daily_reward(new_streak)
                 new_cash = current_cash + reward
@@ -736,7 +732,7 @@ class AntiSpamBot(commands.Bot):
     async def _end_overunder_game(self, guild_id, game_id, instant_stop=False):
         """End the Over/Under game and distribute winnings"""
         if not instant_stop:
-            await asyncio.sleep(150)  # Wait for game duration
+            await asyncio.sleep(30)  # Wait for game duration
 
         if guild_id not in self.overunder_games or game_id not in self.overunder_games[guild_id]:
             return
@@ -2615,17 +2611,17 @@ async def main():
             return False
 
     def _calculate_daily_reward(self, streak):
-        """Calculate daily reward based on streak"""
+        """Calculate daily reward based on streak (streak=1 is first day)"""
         base_reward = 1000
-        if streak == 0:
-            return base_reward
-        elif streak == 1:
-            return 1200
+        if streak <= 1:
+            return base_reward  # First day = 1000 cash
         elif streak == 2:
-            return 1500
+            return 1200  # Second consecutive day
+        elif streak == 3:
+            return 1500  # Third consecutive day
         else:
             # Continue increasing by 400 per day after day 3
-            return 1500 + (400 * (streak - 2))
+            return 1500 + (400 * (streak - 3))
 
     # === CASH SYSTEM COMMANDS ===
     @bot.command(name='money')
@@ -2667,21 +2663,8 @@ async def main():
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
         today = datetime.utcnow().date()
-        key = f"{guild_id}_{user_id}"
-        
-        logger.info(f"DAILY DEBUG: User {ctx.author.name} ({key}) attempting daily claim")
-        logger.info(f"DAILY DEBUG: Today date is {today} (type: {type(today)})")
-        
-        # Log current state before claim attempt
-        if key in bot.user_cash_memory:
-            current_data = bot.user_cash_memory[key]
-            logger.info(f"DAILY DEBUG: User current data: {current_data}")
-        else:
-            logger.info(f"DAILY DEBUG: User not found in memory")
-
         # Use atomic function to prevent race conditions and multiple earnings
         result = await bot._claim_daily_reward(guild_id, user_id, today)
-        logger.info(f"DAILY DEBUG: Claim result: {result}")
         
         # Check if already claimed today
         if result is None:
@@ -3157,39 +3140,6 @@ async def main():
 
         await ctx.send(embed=embed)
 
-    @bot.command(name='txstop')
-    async def stop_overunder(ctx):
-        """Stop the current Tai/Xiu game instantly and show results"""
-        guild_id = str(ctx.guild.id)
-        channel_id = str(ctx.channel.id)
-
-        # Find active game in this channel
-        active_game_id = None
-        if guild_id in bot.overunder_games:
-            for game_id, game_data in bot.overunder_games[guild_id].items():
-                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
-                    active_game_id = game_id
-                    break
-
-        if not active_game_id:
-            embed = discord.Embed(
-                title="❌ Không có game Tài Xỉu",
-                description="Hiện tại không có game Tài Xỉu nào đang chạy trong kênh này.",
-                color=0xff4444
-            )
-            await ctx.send(embed=embed)
-            return
-
-        # Stop the game instantly
-        embed = discord.Embed(
-            title="⏹️ Dừng game Tài Xỉu",
-            description="Game Tài Xỉu đã được dừng! Đang công bố kết quả...",
-            color=0xffa500
-        )
-        await ctx.send(embed=embed)
-
-        # End game immediately
-        await bot._end_overunder_game(guild_id, active_game_id, instant_stop=True)
 
     @bot.command(name='txshow')
     async def show_overunder_result(ctx):
@@ -3279,6 +3229,40 @@ async def main():
 
         embed.set_footer(text=f"Game ID: {active_game_id} • Còn lại: {remaining_seconds} giây • Kết quả có thể thay đổi!")
         await ctx.send(embed=embed)
+
+    @bot.command(name='gamestop')
+    async def stop_overunder(ctx):
+        """Stop the current Tai/Xiu game instantly and show results"""
+        guild_id = str(ctx.guild.id)
+        channel_id = str(ctx.channel.id)
+
+        # Find active game in this channel
+        active_game_id = None
+        if guild_id in bot.overunder_games:
+            for game_id, game_data in bot.overunder_games[guild_id].items():
+                if game_data['channel_id'] == channel_id and game_data['status'] == 'active':
+                    active_game_id = game_id
+                    break
+
+        if not active_game_id:
+            embed = discord.Embed(
+                title="❌ Không có game Tài Xỉu",
+                description="Hiện tại không có game Tài Xỉu nào đang chạy trong kênh này.",
+                color=0xff4444
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Stop the game instantly
+        embed = discord.Embed(
+            title="⏹️ Dừng game Tài Xỉu",
+            description="Game Tài Xỉu đã được dừng! Đang công bố kết quả...",
+            color=0xffa500
+        )
+        await ctx.send(embed=embed)
+
+        # End game immediately
+        await bot._end_overunder_game(guild_id, active_game_id, instant_stop=True)
 
     @bot.command(name='reset_questions')
     @commands.has_permissions(administrator=True)

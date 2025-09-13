@@ -2572,8 +2572,8 @@ async def main():
         """Give someone the middle finger 🖕"""
         if member is None:
             embed = discord.Embed(
-                title="🖕 Lệnh F*ck",
-                description="Hãy chọn một người để chỉ thẳng mặt! 🖕\n\nSử dụng: `?f*ck @người_nào_đó`",
+                title="🖕 Thể hiện thái độ",
+                description="Chọn một người để thể hiện thái độ không hài lòng! 🖕\n\nCách dùng: `?f*ck @tên_người`",
                 color=0xff4500
             )
             await ctx.send(embed=embed)
@@ -2581,8 +2581,8 @@ async def main():
 
         if member == ctx.author:
             embed = discord.Embed(
-                title="🖕 Tự chỉ mình?",
-                description="Bạn không thể tự chỉ thẳng mặt mình! Hãy tìm ai đó khác để mắng 😤",
+                title="🖕 Không thể tự nhắm vào mình!",
+                description="Bạn không thể sử dụng lệnh này với chính mình! Hãy chọn người khác 😤",
                 color=0xff4500
             )
             await ctx.send(embed=embed)
@@ -2700,27 +2700,27 @@ async def main():
         current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
 
         embed = discord.Embed(
-            title="💰 Số dư tài khoản",
-            description=f"**{ctx.author.mention}**",
+            title="💰 Thông tin tài khoản",
+            description=f"**{ctx.author.mention}** - Chi tiết tài khoản của bạn",
             color=0x00ff88
         )
         embed.add_field(
-            name="💳 Số dư hiện tại",
-            value=f"**{current_cash:,} cash**",
+            name="💎 Tài sản hiện tại",
+            value=f"**{current_cash:,} VND**",
             inline=True
         )
         embed.add_field(
-            name="🔥 Daily Streak",
+            name="🔥 Chuỗi ngày liên tiếp",
             value=f"**{streak} ngày**",
             inline=True
         )
         if last_daily:
             embed.add_field(
-                name="📅 Lần nhận thưởng cuối",
+                name="📅 Lần check-in cuối cùng",
                 value=f"**{last_daily}**",
                 inline=True
             )
-        embed.set_footer(text="Dùng ?daily để nhận thưởng hàng ngày!")
+        embed.set_footer(text="Sử dụng ?daily để check-in và nhận thưởng hàng ngày! 🎁")
         await ctx.send(embed=embed)
 
     # === DAILY REWARD COMMAND ===
@@ -2737,13 +2737,13 @@ async def main():
         if result is None:
             current_cash, last_daily, streak = bot._get_user_cash(guild_id, user_id)
             embed = discord.Embed(
-                title="⏰ Đã nhận thưởng hôm nay!",
-                description=f"Bạn đã nhận thưởng hàng ngày rồi!\n\n💰 **Số dư hiện tại:** {current_cash:,} cash\n🔥 **Streak hiện tại:** {streak} ngày",
+                title="⏰ Hôm nay đã check-in rồi!",
+                description=f"Bạn đã hoàn thành check-in hàng ngày rồi!\n\n💎 **Tài sản hiện tại:** {current_cash:,} VND\n🔥 **Chuỗi ngày:** {streak} ngày",
                 color=0xffa500
             )
             embed.add_field(
-                name="🕐 Thời gian",
-                value="Quay lại vào ngày mai để nhận thưởng tiếp theo!",
+                name="⏰ Lịch trình",
+                value="Hãy quay lại vào ngày mai để tiếp tục chuỗi check-in của bạn!",
                 inline=False
             )
             await ctx.send(embed=embed)
@@ -2752,8 +2752,8 @@ async def main():
         # Check for database error
         if result is False:
             embed = discord.Embed(
-                title="❌ Lỗi Database",
-                description="Có lỗi xảy ra khi xử lý thưởng hàng ngày. Vui lòng thử lại sau.",
+                title="❌ Lỗi hệ thống",
+                description="Đã xảy ra lỗi khi xử lý check-in hàng ngày. Vui lòng thử lại sau ít phút.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -2764,40 +2764,40 @@ async def main():
 
         # Create success embed
         embed = discord.Embed(
-            title="🎁 Thưởng hàng ngày!",
-            description=f"**{ctx.author.mention}** đã nhận thưởng hàng ngày!",
+            title="🎁 Check-in thành công!",
+            description=f"**{ctx.author.mention}** đã hoàn thành check-in hàng ngày!",
             color=0x00ff88
         )
         embed.add_field(
-            name="💰 Thưởng nhận được",
-            value=f"**+{reward:,} cash**",
+            name="💎 Phần thưởng",
+            value=f"**+{reward:,} VND**",
             inline=True
         )
         embed.add_field(
-            name="🔥 Streak",
+            name="🔥 Chuỗi ngày",
             value=f"**{new_streak + 1} ngày**",
             inline=True
         )
         embed.add_field(
-            name="💳 Số dư mới",
-            value=f"**{new_cash:,} cash**",
+            name="💰 Tổng tài sản",
+            value=f"**{new_cash:,} VND**",
             inline=True
         )
 
         if new_streak > old_streak:
             embed.add_field(
-                name="🚀 Bonus Streak!",
-                value=f"Streak tăng lên {new_streak + 1} ngày! Thưởng ngày mai sẽ cao hơn!",
+                name="🚀 Chuỗi ngày mới!",
+                value=f"Chuỗi check-in tăng lên {new_streak + 1} ngày! Phần thưởng ngày mai sẽ cao hơn!",
                 inline=False
             )
         elif new_streak == 0 and old_streak > 0:
             embed.add_field(
-                name="💔 Streak bị reset",
-                value="Bạn đã bỏ lỡ một ngày, streak đã được reset về 1.",
+                name="💔 Chuỗi ngày bị ngắt",
+                value="Bạn đã bỏ lỡ một ngày, chuỗi check-in đã được khởi động lại từ ngày 1.",
                 inline=False
             )
 
-        embed.set_footer(text="Nhớ quay lại vào ngày mai để duy trì streak! 🔥")
+        embed.set_footer(text="Hãy nhớ check-in hàng ngày để duy trì chuỗi ngày! 🔥")
         await ctx.send(embed=embed)
 
     @bot.command(name='cashboard')
@@ -2967,28 +2967,28 @@ async def main():
             logger.error(f"Error storing game in database: {e}")
 
         embed = discord.Embed(
-            title="🎲 Game Tài Xỉu Bắt Đầu!",
-            description="**Chào mừng đến với game Tài Xỉu!**\n\nHãy đặt cược xem kết quả sẽ là Tài hay Xỉu!",
+            title="🎲 Game Đoán Số Bắt Đầu!",
+            description="**Chào mừng bạn tham gia game đoán số hấp dẫn!**\n\nHãy dự đoán kết quả sẽ là Tài (cao) hay Xỉu (thấp)!",
             color=0x00ff88
         )
         embed.add_field(
-            name="⏰ Thời gian",
+            name="⏱️ Thời gian cược",
             value="**30 giây** để đặt cược",
             inline=True
         )
         embed.add_field(
-            name="💰 Cách chơi",
-            value="Dùng lệnh `?cuoc <tai/xiu> <số tiền>`",
+            name="🎯 Hướng dẫn",
+            value="Gõ `?cuoc <tai/xiu> <số tiền>`",
             inline=True
         )
         embed.add_field(
-            name="🏆 Phần thưởng",
-            value="**x2** số tiền cược nếu đoán đúng!",
+            name="💸 Tiền thưởng",
+            value="**Nhân đôi** số tiền cược khi thắng!",
             inline=True
         )
         embed.add_field(
-            name="📋 Ví dụ",
-            value="`?cuoc tai 1000` - Cược 1000 cash cho Tài\n`?cuoc xiu 500` - Cược 500 cash cho Xỉu",
+            name="📝 Ví dụ thực tế",
+            value="`?cuoc tai 1000` - Đặt cược 1000 VND vào Tài\n`?cuoc xiu 500` - Đặt cược 500 VND vào Xỉu",
             inline=False
         )
         embed.set_footer(text=f"Game ID: {game_id} • Kết thúc lúc {end_time.strftime('%H:%M:%S')}")
@@ -3083,8 +3083,8 @@ async def main():
             current_cash, _, _ = bot._get_user_cash(guild_id, user_id)
             if current_cash <= 0:
                 embed = discord.Embed(
-                    title="💸 Không có tiền để cược!",
-                    description="Bạn không có tiền để đặt cược.\n\nDùng `?daily` để nhận thưởng hàng ngày!",
+                    title="💸 Tài sản không đủ!",
+                    description="Bạn không có đủ tiền để đặt cược.\n\nSử dụng `?daily` để check-in và nhận thưởng!",
                     color=0xff4444
                 )
                 await ctx.send(embed=embed)
@@ -3113,8 +3113,8 @@ async def main():
         # Check if game has ended
         if datetime.utcnow() >= game_data['end_time']:
             embed = discord.Embed(
-                title="⏰ Game đã kết thúc!",
-                description="Thời gian đặt cược đã hết. Đợi kết quả hoặc bắt đầu game mới.",
+                title="⏰ Vòng cược đã kết thúc!",
+                description="Hết thời gian đặt cược rồi. Đợi kết quả hoặc tạo game mới.",
                 color=0xffa500
             )
             await ctx.send(embed=embed)
@@ -3124,8 +3124,8 @@ async def main():
         current_cash, _, _ = bot._get_user_cash(guild_id, user_id)
         if current_cash < bet_amount:
             embed = discord.Embed(
-                title="💸 Không đủ tiền!",
-                description=f"Bạn chỉ có **{current_cash:,} cash** nhưng muốn cược **{bet_amount:,} cash**.\n\nDùng `?daily` để nhận thưởng hàng ngày!",
+                title="💸 Tài sản không đủ!",
+                description=f"Tài sản của bạn: **{current_cash:,} VND**\nSố tiền muốn cược: **{bet_amount:,} VND**\n\nSử dụng `?daily` để check-in và nhận thưởng!",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
@@ -3135,8 +3135,8 @@ async def main():
         for bet in game_data['bets']:
             if bet['user_id'] == user_id:
                 embed = discord.Embed(
-                    title="⚠️ Đã đặt cược!",
-                    description=f"Bạn đã đặt cược **{bet['amount']:,} cash** cho **{bet['side'].upper()}** trong game này.",
+                    title="⚠️ Bạn đã tham gia rồi!",
+                    description=f"Bạn đã đặt cược **{bet['amount']:,} VND** vào **{bet['side'].upper()}** cho game này rồi.",
                     color=0xffa500
                 )
                 await ctx.send(embed=embed)
@@ -3147,8 +3147,8 @@ async def main():
 
         if not success:
             embed = discord.Embed(
-                title="❌ Lỗi hệ thống!",
-                description="Không thể xử lý cược của bạn. Vui lòng thử lại.",
+                title="❌ Xảy ra lỗi!",
+                description="Không thể xử lý giao dịch cược của bạn. Vui lòng thử lại sau ít giây.",
                 color=0xff4444
             )
             await ctx.send(embed=embed)
